@@ -10,14 +10,11 @@
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",
-<<<<<<< Updated upstream
-=======
     "@prisma/internals": "^6.18.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "dotenv": "^17.2.3",
     "lucide-react": "^0.548.0",
->>>>>>> Stashed changes
     "next": "16.0.1",
     "postcss": "^8.5.6",
     "react": "19.2.0",

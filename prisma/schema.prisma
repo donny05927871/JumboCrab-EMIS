@@ -10,6 +10,74 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL")
+}
+
+
+model EmployeeInformation {
+  firstName                    String
+  lastName                     String
+  middleName                   String?
+  birthdate                    DateTime
+  address                      String?
+  startDate                    DateTime
+  endDate                      DateTime?
+  position                     String
+  department                   String
+  civilStatus                  CIVIL_STATUS
+  createdAt                    DateTime                       @default(now())
+  email                        String?
+  employeeCode                 String                         @unique
+  employeeId                   String                         @id @default(cuid())
+  img                          String?
+  nationality                  String
+  phone                        String?
+  updatedAt                    DateTime                       @updatedAt
+  sex                          GENDER
+  employmentStatus             EMPLOYMENT_STATUS
+  currentStatus                CURRENT_STATUS
+  // Commented out temporarily - will implement these later
+  // employeeContributionSettings EmployeeContributionSettings[]
+  // governmentId               EmployeeGovernmentId?
+  // Shift                      Shift?
+  // shiftId                     Int?
+  // EmployeeHalfMonthAssignment  EmployeeHalfMonthAssignment[]
+  // EmployeeShiftOverride        EmployeeShiftOverride[]
+  // Attendance                   Attendance[]
+  // Punch                        Punch[]
+
+  // PayrollEntry         PayrollEntry[]
+  // EmployeeCompensation EmployeeCompensation[]
+  // EmployeeQrCredential EmployeeQrCredential?
+  // AdhocPayItem         AdhocPayItem[]
+  // EmployeeUserLink     EmployeeUserLink?
+  // MemoRecipient        MemoRecipient[]
+}
+
+
+enum GENDER {
+  MALE
+  FEMALE
+}
+
+enum CIVIL_STATUS {
+  SINGLE
+  MARRIED
+  DIVORCED
+  WIDOWED
+}
+
+enum EMPLOYMENT_STATUS {
+  REGULAR
+  PROBATIONARY
+  TRAINING
+}
+
+enum CURRENT_STATUS {
+  ACTIVE
+  ON_LEAVE
+  VACATION
+  SICK_LEAVE
 }

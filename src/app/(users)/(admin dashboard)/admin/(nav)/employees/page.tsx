@@ -1,11 +1,19 @@
-import ManageEmployees from "@/components/dasboard/manage-empoyees/employees-provider";
+// page.tsx
+"use client";
 
-const EmployeesPage = () => {
+import { EmployeesProvider } from "@/components/dasboard/manage-empoyees/employees-provider";
+import EmployeesTable from "@/components/dasboard/manage-empoyees/employees-table";
+import { Employee } from "@/lib/validations/employees"; // Import the Employee type
+
+export default function EmployeesPage() {
+  // Initialize with proper type
+  const employees: Employee[] = [];
+
   return (
     <div className="px-20 py-10">
-      <ManageEmployees />
+      <EmployeesProvider>
+        <EmployeesTable employees={employees} />
+      </EmployeesProvider>
     </div>
   );
-};
-
-export default EmployeesPage;
+}

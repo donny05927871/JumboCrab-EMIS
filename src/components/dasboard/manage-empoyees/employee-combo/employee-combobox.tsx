@@ -29,8 +29,9 @@ const EmployeeComboBox = () => {
   };
 
   return (
-    <div className="w-full">
-      <div className="flex flex-col gap-3 w-full">
+    <div className="w-full space-y-3">
+      {/* Mobile/Tablet Layout */}
+      <div className="lg:hidden flex flex-col gap-3 w-full">
         {/* Search bar - full width */}
         <div className="w-full">
           <EmployeeSearch />
@@ -64,6 +65,41 @@ const EmployeeComboBox = () => {
             </TooltipProvider>
           )}
         </div>
+      </div>
+
+      {/* Desktop Layout (lg and up) */}
+      <div className="hidden lg:flex items-center gap-2 w-full">
+        {/* Search - takes remaining space */}
+        <div className="flex-1">
+          <EmployeeSearch />
+        </div>
+        
+        {/* Selects - fixed width */}
+        <div className="w-[400px]">
+          <EmployeeSelect />
+        </div>
+        
+        {/* Reset button */}
+        {hasActiveFilters && (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleReset}
+                  className="h-10 w-10 shrink-0"
+                  aria-label="Reset filters"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Reset all filters</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        )}
       </div>
     </div>
   );

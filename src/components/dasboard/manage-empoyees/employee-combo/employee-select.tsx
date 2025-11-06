@@ -21,7 +21,7 @@ const EmployeeSelect = () => {
   return (
     <div className="flex flex-row gap-2 w-full">
       {/* Department Selector */}
-      <div className="flex-1 min-w-[120px]">
+      <div className="flex-1 min-w-[160px]">
         <Select
           value={selectedDepartment || "ALL"}
           onValueChange={(value) =>
@@ -46,7 +46,7 @@ const EmployeeSelect = () => {
       </div>
 
       {/* Status Selector */}
-      <div className="flex-1 min-w-[100px]">
+      <div className="flex-1 min-w-[140px]">
         <Select
           value={selectedStatus || "ALL"}
           onValueChange={(value) =>

@@ -2,6 +2,8 @@ import { promisify } from "util";
 import db from "./db";
 import crypto from "crypto";
 import { Roles } from "@prisma/client";
+import { getIronSession } from "iron-session";
+import { cookies } from "next/headers";
 
 export async function createUserAccount(
   username: string,
@@ -39,4 +41,36 @@ export async function hashPassword(password: string) {
   const derivedKey = (await scyrptAsync(password, salt, KEY_LENGTH)) as Buffer;
 
   return { salt, hash: derivedKey.toString("hex") };
+}
+
+export type sessionData = {
+  Id?: string;
+  username?: string;
+  email?: string;
+  role?: Roles;
+  isLoggedIn: boolean;
+};
+
+export const sessionOptions = {
+  password: process.env.SESSION_PASSWORD!,
+  cookieName: "jumbo-auth",
+  cookieOption: {
+    secure: process.env.NODE_ENV === "production",
+    httpOnly: true,
+    sameSite: "lax",
+    maxAge: 60 * 60 * 24 * 7,
+  },
+};
+
+export async function getSession() {
+  const cookieStore = await cookies();
+  const session = await getIronSession<sessionData>(
+    cookieStore,
+    sessionOptions
+  );
+
+  if (!session.isLoggedIn) {
+    session.isLoggedIn = false;
+  }
+  return session;
 }

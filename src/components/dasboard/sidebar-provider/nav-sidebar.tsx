@@ -32,7 +32,7 @@ import {
 } from "@/components/ui/collapsible";
 
 interface NavSidebarProps {
-  userRole?: string;
+  userRole: string; // Use string (primitive) type, not String (object)
 }
 
 const NavSidebar = ({ userRole }: NavSidebarProps) => {

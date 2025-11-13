@@ -1,13 +1,14 @@
-import { getUserRole } from "@/lib/auth";
-import React from "react";
-
+"use client";
+import { useRole } from "@/hooks/use-role";
 const AdminDashboardPage = () => {
-  const role = getUserRole();
+  const { role, isLoading } = useRole();
+  if (isLoading) return <div>Loading...</div>;
+  if (!role) return <div>Not Authorized</div>;
   return (
-    <>
-      <h1>AdminDashboardPage</h1>
-      <h1>role</h1>
-    </>
+    <div>
+      <h1>Admin Dashboard</h1>
+      <h1>Your role is: {role}</h1>
+    </div>
   );
 };
 

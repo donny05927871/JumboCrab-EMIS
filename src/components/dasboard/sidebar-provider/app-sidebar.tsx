@@ -8,18 +8,23 @@ import {
   SidebarRail,
 } from "@/components/ui/sidebar";
 import HeaderSidebar from "./header-sidebar";
-import NavSidebar from "./nav-sidebar";
-import { FooterSidebar } from "./footer-sidebar";
 
-const AppSidebar = ({ userRole = "admin" }: { userRole?: string }) => {
+import { FooterSidebar } from "./footer-sidebar";
+import NavSidebar from "./nav-sidebar";
+import { useRole } from "@/hooks/use-role";
+
+const AppSidebar = () => {
+  const { role, isLoading } = useRole();
+
+  if (isLoading) {
+    return <div>Loading sidebar...</div>;
+  }
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader>
         <HeaderSidebar />
       </SidebarHeader>
-      <SidebarContent>
-        <NavSidebar userRole={userRole} />
-      </SidebarContent>
+      <SidebarContent>{role && <NavSidebar userRole={role} />}</SidebarContent>
       <SidebarFooter>
         <FooterSidebar
           user={{

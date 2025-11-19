@@ -34,10 +34,17 @@ export const SUFFIX = ["JR", "SR", "II", "III", "IV"] as const;
 export type SUFFIX = (typeof SUFFIX)[number];
 
 // Base employee schema matching Prisma model
+export const EMPLOYEE_CODE_REGEX = /^EMP-\d{3}$/;
+
 export const employeeSchema = z.object({
   id: z.string().optional(),
   userId: z.string().optional().nullable(),
-  employeeCode: z.string().min(1, "Employee code is required"),
+  employeeCode: z
+    .string()
+    .regex(
+      EMPLOYEE_CODE_REGEX,
+      "Employee code must follow the format EMP-000"
+    ),
   firstName: z.string().min(1, "First name is required"),
   lastName: z.string().min(1, "Last name is required"),
   middleName: z.string().optional().nullable(),

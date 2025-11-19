@@ -4,9 +4,11 @@
 import { revalidatePath } from "next/cache";
 import { db, checkConnection } from "@/lib/db";
 import {
+  EMPLOYEE_CODE_REGEX,
   SUFFIX,
   type SUFFIX as SUFFIX_TYPE,
 } from "@/lib/validations/employees";
+import { generateUniqueEmployeeCode } from "@/lib/employees/employee-code";
 import type { Employee as PrismaEmployee } from "@prisma/client";
 
 // ========== GET EMPLOYEES ========= //
@@ -94,9 +96,16 @@ export async function createEmployee(employeeData: any): Promise<{
       return new Date();
     };
 
+    // Generate or validate the employee code
+    const employeeCode =
+      typeof employeeData.employeeCode === "string" &&
+      EMPLOYEE_CODE_REGEX.test(employeeData.employeeCode)
+        ? employeeData.employeeCode
+        : await generateUniqueEmployeeCode();
+
     // Set default values for required fields
     const defaults = {
-      employeeCode: employeeData.employeeCode,
+      employeeCode,
       firstName: employeeData.firstName || "",
       lastName: employeeData.lastName || "",
       sex: employeeData.sex || "",
@@ -203,6 +212,9 @@ export async function updateEmployee(
     const data = JSON.parse(JSON.stringify(employeeData));
     const { id } = data;
     delete data.id; // Remove id from the update data
+    if ("employeeCode" in data) {
+      delete data.employeeCode;
+    }
 
     // Log current state in database before update
     const currentData = await db.employee.findUnique({

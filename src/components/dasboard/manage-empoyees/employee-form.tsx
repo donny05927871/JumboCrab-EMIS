@@ -5,25 +5,33 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   CURRENT_STATUS,
   EMPLOYMENT_STATUS,
   Employee,
-  SUFFIX,
   validateEmployee,
   validatePartialEmployee,
 } from "@/lib/validations/employees";
-import { useState, useEffect } from "react";
+import { useCallback, useState, useEffect } from "react";
 import { Pencil, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { z } from "zod";
 import { createEmployee, updateEmployee } from "@/actions/employees-action";
+import {
+  NATIONALITIES,
+  DEPARTMENTS,
+  POSITIONS,
+  EMERGENCY_RELATIONSHIPS,
+} from "@/lib/employees/options";
+
+const ensureOption = (
+  options: readonly string[],
+  current?: string | null
+): string[] => {
+  const list = Array.from(options);
+  if (current && !list.includes(current)) {
+    list.push(current);
+  }
+  return list;
+};
 
 // Helper component to display form field errors
 const FormError = ({ message }: { message?: string }) => {
@@ -51,6 +59,7 @@ export default function EmployeeForm({
   const [formData, setFormData] = useState<Partial<Employee>>(() => {
     if (initialData) {
       return {
+        employeeCode: initialData.employeeCode || "",
         firstName: initialData.firstName || "",
         lastName: initialData.lastName || "",
         suffix: initialData.suffix || "",
@@ -68,6 +77,7 @@ export default function EmployeeForm({
       };
     }
     return {
+      employeeCode: "",
       firstName: "",
       lastName: "",
       suffix: "",
@@ -86,11 +96,45 @@ export default function EmployeeForm({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [shouldRemoveImage, setShouldRemoveImage] = useState(false);
 
+  const nationalityOptions = ensureOption(
+    NATIONALITIES,
+    formData.nationality || null
+  );
+  const departmentOptions = ensureOption(
+    DEPARTMENTS,
+    formData.department || null
+  );
+  const positionOptions = ensureOption(POSITIONS, formData.position || null);
+  const emergencyRelationshipOptions = ensureOption(
+    EMERGENCY_RELATIONSHIPS,
+    formData.emergencyContactRelationship || null
+  );
+
+  const getGeneratedEmployeeCode = useCallback(async () => {
+    try {
+      const response = await fetch("/api/employees/generate-code");
+      if (!response.ok) {
+        throw new Error("Failed to generate employee code");
+      }
+      const data = await response.json();
+      if (typeof data.employeeCode !== "string") {
+        throw new Error("Invalid employee code response");
+      }
+      return data.employeeCode as string;
+    } catch (error) {
+      console.error("Error fetching employee code:", error);
+      // Fallback to a local random code if the API fails
+      return `EMP-${Math.floor(Math.random() * 1000)
+        .toString()
+        .padStart(3, "0")}`;
+    }
+  }, []);
+
   // Initialize form data
   useEffect(() => {
     const fetchEmployee = async () => {
-      if (mode !== "create" && employeeId && !initialData) {
-        try {
+      try {
+        if (mode !== "create" && employeeId && !initialData) {
           const response = await fetch(`/api/employees/${employeeId}`);
           if (!response.ok) {
             throw new Error("Failed to fetch employee data");
@@ -101,23 +145,21 @@ export default function EmployeeForm({
             img: data.img ?? null,
             isEnded: data.isEnded ?? false,
           });
-        } catch (error) {
-          console.error("Error fetching employee:", error);
-        } finally {
-          setIsLoading(false);
+          return;
         }
-      } else if (initialData) {
-        // Use the provided initialData with default image
+
+        if (initialData) {
+          setFormData({
+            ...initialData,
+            img: initialData.img ?? null,
+            isEnded: initialData.isEnded ?? false,
+          });
+          return;
+        }
+
+        const employeeCode = await getGeneratedEmployeeCode();
         setFormData({
-          ...initialData,
-          img: initialData.img ?? null,
-          isEnded: initialData.isEnded ?? false,
-        });
-        setIsLoading(false);
-      } else {
-        // Initialize new employee with default values
-        setFormData({
-          employeeCode: `EMP-${Date.now()}`,
+          employeeCode,
           firstName: "",
           lastName: "",
           email: "",
@@ -141,12 +183,15 @@ export default function EmployeeForm({
           address: "",
           img: null,
         });
+      } catch (error) {
+        console.error("Error fetching employee:", error);
+      } finally {
         setIsLoading(false);
       }
     };
 
     fetchEmployee();
-  }, [employeeId, mode]);
+  }, [employeeId, mode, initialData, getGeneratedEmployeeCode]);
 
   const validateField = (name: string, value: any) => {
     // Create a temporary object with the new value
@@ -200,6 +245,10 @@ export default function EmployeeForm({
     if (mode === "view") return; // Prevent changes in view mode
 
     const { name, value } = e.target;
+
+    if (name === "employeeCode") {
+      return;
+    }
 
     // Handle phone number input (only allow numbers)
     if (name === "phone" || name === "emergencyContactPhone") {
@@ -265,6 +314,10 @@ export default function EmployeeForm({
       // The schema will handle the img transformation
       img: formData.img || null,
     };
+
+    if (mode !== "create") {
+      delete submissionData.employeeCode;
+    }
 
     console.log("Form submitted with data:", submissionData);
     setIsSubmitting(true);
@@ -663,18 +716,27 @@ export default function EmployeeForm({
                       </div>
                     ) : (
                       <div className="w-full">
-                        <Input
+                        <select
                           id="nationality"
                           name="nationality"
                           value={formData.nationality || ""}
-                          onChange={handleChange}
-                          placeholder="e.g., Filipino, American"
-                          className={`w-full ${
-                            errors.nationality ? "border-red-500" : ""
-                          }`}
-                          data-error={!!errors.nationality}
+                          onChange={(e) =>
+                            handleSelectChange("nationality", e.target.value)
+                          }
+                          className={`w-full h-10 px-3 py-2 rounded-md border ${
+                            errors.nationality
+                              ? "border-red-500"
+                              : "border-gray-300"
+                          } focus:outline-none focus:ring-1 focus:ring-primary`}
                           required
-                        />
+                        >
+                          <option value="">Select nationality</option>
+                          {nationalityOptions.map((nationality) => (
+                            <option key={nationality} value={nationality}>
+                              {nationality}
+                            </option>
+                          ))}
+                        </select>
                         <FormError message={errors.nationality} />
                       </div>
                     )}
@@ -885,10 +947,13 @@ export default function EmployeeForm({
                     id="employeeCode"
                     name="employeeCode"
                     value={formData.employeeCode || ""}
-                    onChange={handleChange}
+                    readOnly
                     className={errors.employeeCode ? "border-red-500" : ""}
                     data-error={!!errors.employeeCode}
                   />
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Employee code is auto-generated and cannot be edited.
+                  </p>
                   <FormError message={errors.employeeCode} />
                 </div>
               )}
@@ -903,14 +968,24 @@ export default function EmployeeForm({
                 </div>
               ) : (
                 <div className="w-full">
-                  <Input
+                  <select
                     id="department"
                     name="department"
                     value={formData.department || ""}
-                    onChange={handleChange}
-                    className={errors.department ? "border-red-500" : ""}
-                    data-error={!!errors.department}
-                  />
+                    onChange={(e) =>
+                      handleSelectChange("department", e.target.value)
+                    }
+                    className={`w-full h-10 px-3 py-2 rounded-md border ${
+                      errors.department ? "border-red-500" : "border-gray-300"
+                    } focus:outline-none focus:ring-1 focus:ring-primary`}
+                  >
+                    <option value="">Select department</option>
+                    {departmentOptions.map((department) => (
+                      <option key={department} value={department}>
+                        {department}
+                      </option>
+                    ))}
+                  </select>
                   <FormError message={errors.department} />
                 </div>
               )}
@@ -925,14 +1000,24 @@ export default function EmployeeForm({
                 </div>
               ) : (
                 <div className="w-full">
-                  <Input
+                  <select
                     id="position"
                     name="position"
                     value={formData.position || ""}
-                    onChange={handleChange}
-                    className={errors.position ? "border-red-500" : ""}
-                    data-error={!!errors.position}
-                  />
+                    onChange={(e) =>
+                      handleSelectChange("position", e.target.value)
+                    }
+                    className={`w-full h-10 px-3 py-2 rounded-md border ${
+                      errors.position ? "border-red-500" : "border-gray-300"
+                    } focus:outline-none focus:ring-1 focus:ring-primary`}
+                  >
+                    <option value="">Select position</option>
+                    {positionOptions.map((position) => (
+                      <option key={position} value={position}>
+                        {position}
+                      </option>
+                    ))}
+                  </select>
                   <FormError message={errors.position} />
                 </div>
               )}
@@ -1098,18 +1183,29 @@ export default function EmployeeForm({
                 </div>
               ) : (
                 <div className="w-full">
-                  <Input
+                  <select
                     id="emergencyContactRelationship"
                     name="emergencyContactRelationship"
                     value={formData.emergencyContactRelationship || ""}
-                    onChange={handleChange}
-                    className={
+                    onChange={(e) =>
+                      handleSelectChange(
+                        "emergencyContactRelationship",
+                        e.target.value
+                      )
+                    }
+                    className={`w-full h-10 px-3 py-2 rounded-md border ${
                       errors.emergencyContactRelationship
                         ? "border-red-500"
-                        : ""
-                    }
-                    data-error={!!errors.emergencyContactRelationship}
-                  />
+                        : "border-gray-300"
+                    } focus:outline-none focus:ring-1 focus:ring-primary`}
+                  >
+                    <option value="">Select relationship</option>
+                    {emergencyRelationshipOptions.map((relationship) => (
+                      <option key={relationship} value={relationship}>
+                        {relationship}
+                      </option>
+                    ))}
+                  </select>
                   <FormError message={errors.emergencyContactRelationship} />
                 </div>
               )}

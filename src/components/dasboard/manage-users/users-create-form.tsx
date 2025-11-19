@@ -57,6 +57,16 @@ useEffect(() => {
   fetchEmployees()
 }, [role])
 
+  useEffect(() => {
+    if (role !== "employee") {
+      setSelectedEmployee(null);
+      setSearchTerm("");
+      return;
+    }
+
+    setEmail(selectedEmployee?.email ?? "");
+  }, [role, selectedEmployee]);
+
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
@@ -147,6 +157,7 @@ useEffect(() => {
                   name="username"
                   placeholder="johndoe"
                   className="w-full"
+                  value={username}
                   onChange={(e) => setUsername(e.target.value)}
                 />
               </div>
@@ -164,7 +175,9 @@ useEffect(() => {
                   name="email"
                   placeholder="user@example.com"
                   className="w-full"
+                  value={email}
                   onChange={(e) => setEmail(e.target.value)}
+                  readOnly={role === "employee" && !!selectedEmployee?.email}
                 />
               </div>
 
@@ -182,6 +195,7 @@ useEffect(() => {
                     name="password"
                     placeholder="••••••••"
                     className="w-full pr-10"
+                    value={password}
                     onChange={(e) => setPassword(e.target.value)}
                   />
                   <button

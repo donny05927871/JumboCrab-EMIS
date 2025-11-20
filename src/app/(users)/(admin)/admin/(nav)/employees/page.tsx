@@ -48,7 +48,13 @@ function ResetFiltersButton() {
 }
 
 function EmployeesContent() {
-  const { filteredEmployees, loading, error } = useEmployees();
+  const {
+    filteredEmployees,
+    loading,
+    error,
+    showArchived,
+    setShowArchived,
+  } = useEmployees();
   const router = useRouter();
 
   if (loading) {
@@ -92,12 +98,22 @@ function EmployeesContent() {
             Manage your employee's records
           </p>
         </div>
-        <Button
-          onClick={() => router.push("/admin/employees/new")}
-          className="w-full md:w-auto"
-        >
-          Add New Employee
-        </Button>
+        <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+          <Button
+            variant="outline"
+            onClick={() => setShowArchived(!showArchived)}
+            className="w-full sm:w-auto"
+          >
+            {showArchived ? "Hide Archived" : "View Archived"}
+          </Button>
+          <Button
+            onClick={() => router.push("/admin/employees/new")}
+            className="w-full sm:w-auto"
+            disabled={showArchived}
+          >
+            Add New Employee
+          </Button>
+        </div>
       </div>
 
       <div className="mt-6 bg-card text-card-foreground border border-border shadow-sm rounded-xl p-5">

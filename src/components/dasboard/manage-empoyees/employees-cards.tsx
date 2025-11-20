@@ -12,18 +12,10 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { EmployeesActions } from "./employees-crud";
 import { Separator } from "@/components/ui/separator";
+import { useEmployees } from "./employees-provider";
 
-// ========== PAGINATION LOGIC ========= //
 
 export default function EmployeesCards({
   employees,
@@ -31,6 +23,7 @@ export default function EmployeesCards({
   employees: Employee[];
 }) {
   const router = useRouter();
+  const { refreshEmployees, showArchived } = useEmployees();
   // State for pagination
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(8);
@@ -55,8 +48,69 @@ export default function EmployeesCards({
 
   // Handle archive employee
   const handleArchiveClick = (employee: Employee) => {
-    // TODO: Implement archive functionality with confirmation dialog
-    console.log("Archive employee:", employee.id);
+    if (!employee.id) return;
+    const confirmed = window.confirm(
+      `Archive ${employee.firstName ?? ""} ${employee.lastName ?? ""}?`
+    );
+    if (!confirmed) return;
+
+    fetch(`/api/employees/${employee.id}/archive`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ isArchived: true }),
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || "Failed to archive employee");
+        }
+        await refreshEmployees();
+      })
+      .catch((err) => {
+        console.error("Archive failed:", err);
+        alert(err instanceof Error ? err.message : "Failed to archive employee");
+      });
+  };
+
+  const handleUnarchiveClick = (employee: Employee) => {
+    if (!employee.id) return;
+    fetch(`/api/employees/${employee.id}/archive`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ isArchived: false }),
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || "Failed to unarchive employee");
+        }
+        await refreshEmployees();
+      })
+      .catch((err) => {
+        console.error("Unarchive failed:", err);
+        alert(err instanceof Error ? err.message : "Failed to unarchive employee");
+      });
+  };
+
+  const handleDeleteClick = (employee: Employee) => {
+    if (!employee.id) return;
+    const confirmed = window.confirm(
+      `Permanently delete ${employee.firstName ?? ""} ${employee.lastName ?? ""}?`
+    );
+    if (!confirmed) return;
+
+    fetch(`/api/employees/${employee.id}`, { method: "DELETE" })
+      .then(async (res) => {
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || "Failed to delete employee");
+        }
+        await refreshEmployees();
+      })
+      .catch((err) => {
+        console.error("Delete failed:", err);
+        alert(err instanceof Error ? err.message : "Failed to delete employee");
+      });
   };
 
   // Calculate pagination
@@ -111,16 +165,16 @@ export default function EmployeesCards({
         {currentItems.map((employee) => (
           <div
             key={employee.id}
-            className="bg-card text-card-foreground rounded-xl border border-border p-4 shadow-sm hover:shadow-md transition-shadow flex flex-col h-[280px]"
+            className="bg-card text-card-foreground rounded-xl border border-border p-4 shadow-sm hover:shadow-md transition-shadow flex flex-col min-h-[320px]"
           >
             <div className="flex-1 flex flex-col">
               {/* Header with Avatar and Name */}
-              <div className="flex justify-between items-start w-full">
-                <div className="flex items-center space-x-2 flex-1 min-w-0">
-                  <div className="w-12 h-12 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
-                    <span className="font-semibold text-base">
-                      {employee.firstName?.charAt(0)}
-                      {employee.lastName?.charAt(0)}
+                <div className="flex justify-between items-start w-full gap-2">
+                  <div className="flex items-center space-x-2 flex-1 min-w-0">
+                    <div className="w-12 h-12 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                      <span className="font-semibold text-base">
+                        {employee.firstName?.charAt(0)}
+                        {employee.lastName?.charAt(0)}
                     </span>
                   </div>
                   {/* Name/position: allow two lines for name to avoid over-truncation */}
@@ -138,6 +192,9 @@ export default function EmployeesCards({
                     employee={employee}
                     onEdit={handleEditEmployee}
                     onArchive={handleArchiveClick}
+                    onUnarchive={handleUnarchiveClick}
+                    onDelete={handleDeleteClick}
+                    isArchivedView={showArchived}
                   />
                 </div>
               </div>
@@ -209,13 +266,35 @@ export default function EmployeesCards({
                       ? new Date(employee.startDate).toLocaleDateString()
                       : "N/A"}
                   </div>
+                  {(employee.currentStatus === "ENDED" ||
+                    employee.currentStatus === "INACTIVE") && (
+                    <div className="flex items-center">
+                      <svg
+                        className="w-4 h-4 mr-2 text-muted-foreground"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M12 8v4l2 2m6-4a8 8 0 11-16 0 8 8 0 0116 0z"
+                        />
+                      </svg>
+                      End:{" "}
+                      {employee.endDate
+                        ? new Date(employee.endDate).toLocaleDateString()
+                        : "N/A"}
+                    </div>
+                  )}
                 </div>
               </div>
-              {/* Status and Preview */}
-              <Separator className="my-2" />
-              <div>
-                <div className="flex justify-between items-center w-full">
-                  {(() => {
+                {/* Status and Preview */}
+                <Separator className="my-2" />
+                <div>
+                  <div className="flex justify-between items-center w-full">
+                    {(() => {
                     const statusStyles: Record<string, string> = {
                       ACTIVE:
                         "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-100",
@@ -249,6 +328,7 @@ export default function EmployeesCards({
                     >
                       View
                     </Button>
+                 
                   </div>
                 </div>
               </div>

@@ -58,7 +58,7 @@ function UsersPageContent() {
           </p>
         </div>
         <Button
-          onClick={() => router.push("/admin/users/new")}
+          onClick={() => router.push("/admin/users/create")}
           className="w-full md:w-auto"
         >
           Add New User

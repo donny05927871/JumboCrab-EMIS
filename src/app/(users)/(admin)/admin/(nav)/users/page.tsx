@@ -14,6 +14,16 @@ function UsersPageContent() {
   const [employeeSearch, setEmployeeSearch] = useState("");
   const router = useRouter();
 
+  function handleView(user: any) {
+    console.log("View user", user.id);
+    if (!user.id) {
+      console.error("No User ID provided for view");
+      return;
+    }
+    // This is the correct path - don't include route groups
+    router.push(`/admin/users/${user.id}/view`);
+  }
+
   const handleEdit = (user: any) => {
     console.log("Edit user:", user);
     // Add your edit logic here
@@ -94,6 +104,7 @@ function UsersPageContent() {
               users={managementUsers}
               onEdit={handleEdit}
               onDelete={handleDelete}
+              onView={handleView}
             />
           ) : (
             <p className="text-sm text-muted-foreground">
@@ -129,6 +140,7 @@ function UsersPageContent() {
               users={employeeUsers}
               onEdit={handleEdit}
               onDelete={handleDelete}
+              onView={handleView}
             />
           ) : (
             <p className="text-sm text-muted-foreground">

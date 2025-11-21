@@ -10,9 +10,15 @@ interface UsersCardsProps {
   users: User[];
   onEdit: (user: User) => void;
   onDelete: (user: User) => void;
+  onView: (user: User) => void;
 }
 
-export function UsersCards({ users, onEdit, onDelete }: UsersCardsProps) {
+export function UsersCards({
+  users,
+  onEdit,
+  onDelete,
+  onView,
+}: UsersCardsProps) {
   const getRoleBadgeColor = (role: string) => {
     switch (role) {
       case "admin":
@@ -80,23 +86,17 @@ export function UsersCards({ users, onEdit, onDelete }: UsersCardsProps) {
 
               {user.createdAt && (
                 <div className="text-sm text-muted-foreground">
-                  <span className="font-medium text-foreground/90">Joined: </span>
+                  <span className="font-medium text-foreground/90">
+                    Joined:{" "}
+                  </span>
                   {new Date(user.createdAt).toLocaleDateString()}
                 </div>
               )}
             </div>
 
             <div className="flex justify-end space-x-2 pt-2">
-              <Button variant="outline" size="sm" onClick={() => onEdit(user)}>
-                Edit
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="text-destructive border-destructive/30 hover:bg-destructive/10"
-                onClick={() => onDelete(user)}
-              >
-                Delete
+              <Button variant="outline" size="sm" onClick={() => onView(user)}>
+                View
               </Button>
             </div>
           </CardContent>

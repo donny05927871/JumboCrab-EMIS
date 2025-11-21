@@ -69,10 +69,25 @@ export function useSession() {
         return session?.user;
       },
       get employee() {
-        return session?.user?.employee;
+        return session?.user.employee;
       },
       get isAdmin() {
-        return session?.user?.role === "admin";
+        return session?.user.role === "admin";
+      },
+      get isEmployee() {
+        return session?.user.role === "employee";
+      },
+      get isManager() {
+        return session?.user.role === "manager";
+      },
+      get isGeneralManager() {
+        return session?.user.role === "generalManager";
+      },
+      get isClerk() {
+        return session?.user.role === "clerk";
+      },
+      get isSupervisor() {
+        return session?.user.role === "supervisor";
       },
     }),
     [session, loading, error]

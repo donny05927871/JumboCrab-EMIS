@@ -9,7 +9,7 @@ import {
   type SUFFIX as SUFFIX_TYPE,
 } from "@/lib/validations/employees";
 import { generateUniqueEmployeeCode } from "@/lib/employees/employee-code";
-import type { Employee as PrismaEmployee } from "@prisma/client";
+import type { Employee, Employee as PrismaEmployee } from "@prisma/client";
 
 // ========== GET EMPLOYEES ========= //
 export async function getEmployees(): Promise<{
@@ -150,8 +150,6 @@ export async function createEmployee(employeeData: any): Promise<{
         employeeData.emergencyContactRelationship || null,
       emergencyContactPhone: employeeData.emergencyContactPhone || null,
       emergencyContactEmail: employeeData.emergencyContactEmail || null,
-
-
     };
 
     // Handle suffix validation
@@ -164,21 +162,23 @@ export async function createEmployee(employeeData: any): Promise<{
 
     console.log("Final create data:", defaults);
 
- const newEmployee = await db.employee.create({
-  data: {
-    ...defaults,
-    id: Math.random().toString(36).substring(2, 9),
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    // Replace userId with user relation
-    user: employeeData.userId ? {
-      connect: { id: employeeData.userId }
-    } : undefined,
-  },
-  include: {
-    user: true // Include the user in the returned data if needed
-  }
-});
+    const newEmployee = await db.employee.create({
+      data: {
+        ...defaults,
+        id: Math.random().toString(36).substring(2, 9),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        // Replace userId with user relation
+        user: employeeData.userId
+          ? {
+              connect: { id: employeeData.userId },
+            }
+          : undefined,
+      },
+      include: {
+        user: true, // Include the user in the returned data if needed
+      },
+    });
 
     revalidatePath("/dashboard/employees");
     return { success: true, data: newEmployee };
@@ -528,29 +528,29 @@ export async function getEmployeesWithoutUser() {
   try {
     const employees = await db.employee.findMany({
       where: {
-        user: null
+        user: null,
       },
       select: {
         id: true,
         firstName: true,
         lastName: true,
         employeeCode: true,
-        email: true
+        email: true,
       },
       orderBy: {
-        employeeCode: 'asc'
-      }
-    })
+        employeeCode: "asc",
+      },
+    });
 
-    return { 
-      success: true, 
-      data: employees 
-    }
+    return {
+      success: true,
+      data: employees,
+    };
   } catch (error) {
-    console.error('Error fetching employees without user accounts:', error)
-    return { 
-      success: false, 
-      error: 'Failed to fetch employees without user accounts' 
-    }
+    console.error("Error fetching employees without user accounts:", error);
+    return {
+      success: false,
+      error: "Failed to fetch employees without user accounts",
+    };
   }
 }

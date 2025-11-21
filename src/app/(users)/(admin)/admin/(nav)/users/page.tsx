@@ -50,7 +50,7 @@ function UsersPageContent() {
 
   return (
     <div className="px-4 py-8 sm:px-8 lg:px-12">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Users</h1>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -61,7 +61,7 @@ function UsersPageContent() {
           onClick={() => router.push("/admin/users/new")}
           className="w-full md:w-auto"
         >
-          Add New Employee
+          Add New User
         </Button>
       </div>
 

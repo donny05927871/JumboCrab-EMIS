@@ -103,7 +103,7 @@ export async function POST(request: NextRequest) {
       password: hash,
       salt,
       role: normalizedRole as Roles,
-      isArchived: false,
+      isDisabled: false,
       ...(role === "employee" &&
         employeeId && {
           employee: {
@@ -120,7 +120,7 @@ export async function POST(request: NextRequest) {
         username: true,
         email: true,
         role: true,
-        isArchived: true,
+        isDisabled: true,
         createdAt: true,
         updatedAt: true,
         employee: {

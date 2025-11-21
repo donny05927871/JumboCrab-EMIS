@@ -5,19 +5,18 @@ import {
   Breadcrumb,
   BreadcrumbList,
   BreadcrumbItem,
-  BreadcrumbLink,
   BreadcrumbSeparator,
   BreadcrumbPage,
 } from "@/components/ui/breadcrumb";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@radix-ui/react-separator";
 import { usePathname } from "next/navigation";
-import { Fragment } from "react";
+import { Fragment, useEffect } from "react";
 import { ModeToggle } from "@/components/theme-provider/mode-toggle";
 
 /**
  * NavHeader Component
- * 
+ *
  * The main navigation header component that appears at the top of the application.
  * It includes:
  * - Breadcrumb navigation showing the current page hierarchy
@@ -25,13 +24,26 @@ import { ModeToggle } from "@/components/theme-provider/mode-toggle";
  * - Sidebar toggle button
  */
 const NavHeader = () => {
+  // Get user session data first
+  const { user, employee, loading, error } = useSession();
+  useEffect(() => {
+    console.log("Current User:", user);
+    console.log("Employee Data:", employee);
+  }, [user, employee]);
   // Get current pathname and split it into segments for breadcrumb generation
   const pathname = usePathname();
   const segments = pathname
-    .split("?")[0]  // Remove query parameters
-    .split("#")[0]  // Remove hash fragments
-    .split("/")     // Split into path segments
+    .split("?")[0] // Remove query parameters
+    .split("#")[0] // Remove hash fragments
+    .split("/") // Split into path segments
     .filter(Boolean); // Remove empty segments
+
+  // Show loading/error states if needed
+  if (loading) return <div className="p-4">Loading user data...</div>;
+  if (error)
+    return <div className="p-4 text-red-500">Error: {error.message}</div>;
+  if (!user)
+    return <div className="p-4">Please log in to view this content</div>;
 
   /**
    * Converts a URL segment into a title case string
@@ -56,15 +68,6 @@ const NavHeader = () => {
     };
     return map[s.toLowerCase()] ?? toTitle(s);
   };
-
-  // Get user session data
-  const { session, loading, error } = useSession();
-
-  // Show loading/error states if needed
-  if (loading) return <div>Loading user data...</div>;
-  if (error) return <div>Error: {error.message}</div>;
-  if (!session?.isLoggedIn)
-    return <div>Please log in to view this content</div>;
 
   return (
     <header className="sticky top-0 z-40 flex h-16 w-full items-center border-b bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/60">
@@ -94,7 +97,9 @@ const NavHeader = () => {
 
                 // Generate breadcrumb items for each path segment
                 return rest.map((seg, idx) => {
-                  const href = `/${[role, ...rest.slice(0, idx + 1)].join("/")}`;
+                  const href = `/${[role, ...rest.slice(0, idx + 1)].join(
+                    "/"
+                  )}`;
                   const isLast = idx === rest.length - 1;
                   return (
                     <Fragment key={href}>
@@ -103,11 +108,12 @@ const NavHeader = () => {
                         <BreadcrumbSeparator className="text-muted-foreground" />
                       )}
                       <BreadcrumbItem>
-                       {!isLast ? (
+                        {!isLast ? (
                           // Show as non-clickable text for non-last items
                           <span className="text-sm font-medium text-muted-foreground">
                             {toLabel(seg)}
-                          </span>) : (
+                          </span>
+                        ) : (
                           // Last item remains as a clickable link
                           <BreadcrumbPage className="text-sm font-medium">
                             {toLabel(seg)}
@@ -123,16 +129,22 @@ const NavHeader = () => {
         </div>
 
         {/* Right side: User info */}
-        <ModeToggle />
         <div className="flex items-center gap-4">
-          <div className="flex flex-col text-xs text-green-700">
-            <span className="font-bold">Active Session</span>
-            <span>Username: {session.username}</span>
-            <span>Role: {session.role}</span>
-          </div>
-          {/* User avatar placeholder */}
-          <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center">
-            <span className="text-sm font-medium text-muted-foreground">U</span>
+          <ModeToggle />
+          <div className="flex items-center gap-3">
+            <div className="flex flex-col items-end text-sm">
+              <span className="font-medium">
+                {employee
+                  ? `${employee.firstName} ${employee.lastName}`
+                  : user.username}
+              </span>
+              <span className="text-xs text-muted-foreground">{user.role}</span>
+            </div>
+            <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center">
+              <span className="text-sm font-medium text-muted-foreground">
+                {user.username?.charAt(0).toUpperCase()}
+              </span>
+            </div>
           </div>
         </div>
       </div>

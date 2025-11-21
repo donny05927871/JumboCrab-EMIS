@@ -1,18 +1,47 @@
 "use server";
 
 import { getSession } from "@/lib/auth";
+import { db } from "@/lib/db";
 
 export async function fetchSession() {
   try {
     const session = await getSession();
+
+    if (!session.Id) {
+      return {
+        success: true,
+        session: { isLoggedIn: false },
+      };
+    }
+
+    // Fetch the user with employee data
+    const user = await db.user.findUnique({
+      where: { id: session.Id },
+      include: {
+        employee: true,
+      },
+    });
+
+    if (!user) {
+      return {
+        success: false,
+        error: "User not found",
+      };
+    }
+
     const plainSession = {
-      id: session.Id ?? undefined,
-      username: session.username ?? undefined,
-      email: session.email ?? undefined,
-      role: session.role ?? undefined,
-      isLoggedIn: Boolean(session.isLoggedIn),
+      id: user.id,
+      username: user.username,
+      email: user.email,
+      role: user.role,
+      employee: user.employee || null,
+      isLoggedIn: true,
     };
-    return { success: true, session: plainSession };
+
+    return {
+      success: true,
+      session: plainSession,
+    };
   } catch (error) {
     console.error("Failed to fetch session:", error);
     return {

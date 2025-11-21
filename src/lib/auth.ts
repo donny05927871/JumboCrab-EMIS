@@ -23,9 +23,10 @@ export async function createUserAccount(
         password: hash,
         salt,
         role,
-        isArchived: false,
+        isDisabled: false,
       },
     });
+
     return { success: true, user }; // Fixed return statement
   } catch (error) {
     console.error("Create user account error", error);

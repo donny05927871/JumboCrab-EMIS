@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
     }
     // Create session for the new user
     const session = await getSession();
-    session.Id = result.user.id;
+    session.userId = result.user.userId;
     session.username = result.user.username;
     session.email = result.user.email;
     session.role = result.user.role;
@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
       {
         success: true,
         user: {
-          id: session.Id,
+          userId: session.userId,
           username: session.username,
           email: session.email,
           role: session.role,

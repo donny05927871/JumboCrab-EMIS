@@ -8,7 +8,7 @@ datasource db {
 }
 
 model User {
-  id       String    @id @default(cuid())
+  userId   String    @id @default(cuid())
   username String    @unique
   email    String    @unique
   password String
@@ -22,7 +22,7 @@ model User {
 }
 
 model Employee {
-  id                           String            @id
+  employeeId                   String            @id
   employeeCode                 String            @unique
   firstName                    String
   lastName                     String
@@ -57,7 +57,7 @@ model Employee {
   updatedAt                    DateTime          @updatedAt
 
   //One is to One relationship with Model User
-  user   User?   @relation(fields: [userId], references: [id])
+  user   User?   @relation(fields: [userId], references: [userId])
   userId String? @unique // Foreign key
 }
 

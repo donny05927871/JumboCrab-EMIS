@@ -45,7 +45,7 @@ const FormError = ({ message }: { message?: string }) => {
 };
 
 type EmployeeFormProps = {
-  employeeId: string | null;
+  employeeId: string | null; // Changed from 'id' to 'employeeId'
   mode: "create" | "view" | "edit";
   initialData?: Partial<Employee> | null;
 };
@@ -112,7 +112,7 @@ export default function EmployeeForm({
 
   const getGeneratedEmployeeCode = useCallback(async () => {
     try {
-      const response = await fetch("/api/employees/generate-code");
+      const response = await fetch(`/api/employees/generate-code`); // Changed from /api/employees/${employeeId}
       if (!response.ok) {
         throw new Error("Failed to generate employee code");
       }
@@ -201,7 +201,7 @@ export default function EmployeeForm({
     const validationData = {
       ...tempData,
       // Ensure img is either a valid URL, base64 string, or null
-      img: tempData.img || null
+      img: tempData.img || null,
     };
 
     // Validate the field using the appropriate schema
@@ -311,7 +311,8 @@ export default function EmployeeForm({
     // Prepare form data for submission
     const submissionData = {
       ...formData,
-      // The schema will handle the img transformation
+      // The schema will handle the img transformation}
+      isEnded: Boolean(formData.isEnded),
       img: formData.img || null,
     };
 
@@ -367,7 +368,7 @@ export default function EmployeeForm({
         );
         result = await updateEmployee({
           ...submissionData,
-          id: employeeId,
+          employeeId: employeeId, // Changed from 'id' to 'employeeId'
         } as any);
         console.log("Update employee result:", result);
       } else {
@@ -416,7 +417,9 @@ export default function EmployeeForm({
         <div className="flex flex-col md:flex-row gap-8">
           {/* ========== PROFILE IMAGE SECTION ========== */}
           <div className="w-full md:w-48 space-y-4">
-            <h4 className="font-medium text-sm text-foreground">Profile Image</h4>
+            <h4 className="font-medium text-sm text-foreground">
+              Profile Image
+            </h4>
             <div className="flex justify-center">
               <div className="relative">
                 <div className="h-32 w-32 rounded-full overflow-hidden border border-border bg-muted">
@@ -438,7 +441,7 @@ export default function EmployeeForm({
                         if (file) {
                           const reader = new FileReader();
                           reader.onload = (event) => {
-                            setFormData(prev => ({
+                            setFormData((prev) => ({
                               ...prev,
                               img: event.target?.result as string,
                             }));
@@ -468,7 +471,7 @@ export default function EmployeeForm({
                           size="icon"
                           className="h-7 w-7 text-destructive hover:text-destructive/80"
                           onClick={() => {
-                            setFormData(prev => ({ ...prev, img: null }));
+                            setFormData((prev) => ({ ...prev, img: null }));
                           }}
                           aria-label="Remove photo"
                         >
@@ -560,7 +563,9 @@ export default function EmployeeForm({
                             handleSelectChange("suffix", e.target.value)
                           }
                           className={`w-full h-10 px-2 py-2 rounded-md border ${
-                            errors.suffix ? "border-destructive" : "border-border"
+                            errors.suffix
+                              ? "border-destructive"
+                              : "border-border"
                           } bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-ring`}
                         >
                           <option value="">-</option>
@@ -659,7 +664,9 @@ export default function EmployeeForm({
                               handleSelectChange("sex", e.target.value)
                             }
                             className={`w-full h-10 px-2 py-2 rounded-md border ${
-                              errors.sex ? "border-destructive" : "border-border"
+                              errors.sex
+                                ? "border-destructive"
+                                : "border-border"
                             } bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-ring`}
                             required
                           >
@@ -690,7 +697,9 @@ export default function EmployeeForm({
                             handleSelectChange("civilStatus", e.target.value)
                           }
                           className={`w-full h-10 px-3 py-2 rounded-md border ${
-                            errors.civilStatus ? "border-destructive" : "border-border"
+                            errors.civilStatus
+                              ? "border-destructive"
+                              : "border-border"
                           } bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-ring`}
                           required
                         >
@@ -722,7 +731,9 @@ export default function EmployeeForm({
                             handleSelectChange("nationality", e.target.value)
                           }
                           className={`w-full h-10 px-3 py-2 rounded-md border ${
-                            errors.nationality ? "border-destructive" : "border-border"
+                            errors.nationality
+                              ? "border-destructive"
+                              : "border-border"
                           } bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-ring`}
                           required
                         >
@@ -1054,7 +1065,9 @@ export default function EmployeeForm({
                     {new Date(formData.endDate).toLocaleDateString()}
                   </div>
                 ) : (
-                  <div className="text-sm text-muted-foreground">Not applicable</div>
+                  <div className="text-sm text-muted-foreground">
+                    Not applicable
+                  </div>
                 )
               ) : shouldShowEndDateField ? (
                 <Input

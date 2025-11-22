@@ -25,7 +25,7 @@ export async function POST(request: Request) {
 
     // Set session cookie
     const session = await getSession();
-    session.Id = result.user?.id;
+    session.userId = result.user?.userId;
     session.username = result.user?.username;
     session.email = result.user?.email;
     session.role = result.user?.role;
@@ -35,7 +35,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       user: {
-        id: result.user?.id,
+        userId: result.user?.userId,
         username: result.user?.username,
         email: result.user?.email,
         role: result.user?.role,

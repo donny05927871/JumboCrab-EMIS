@@ -45,7 +45,7 @@ export async function hashPassword(password: string) {
 }
 
 export type sessionData = {
-  Id?: string;
+  userId?: string;
   username?: string;
   email?: string;
   role?: Roles;
@@ -90,7 +90,7 @@ export async function signIn(username: string, password: string) {
       include: {
         employee: {
           select: {
-            id: true,
+            employeeId: true,
             firstName: true,
             lastName: true,
           },
@@ -111,7 +111,7 @@ export async function signIn(username: string, password: string) {
     return {
       success: true,
       user: {
-        id: user.id,
+        userId: user.userId,
         username: user.username,
         email: user.email,
         role: user.role,

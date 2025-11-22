@@ -115,9 +115,9 @@ function UserViewPageContent({
             <h3 className="text-lg font-medium">View User</h3>
             <p className="text-sm text-muted-foreground">View user details</p>
           </div>
-          {user?.id && (
+          {user?.userId && (
             <Button asChild variant="outline" className="gap-2">
-              <Link href={`/admin/users/${user.id}/edit`}>
+              <Link href={`/admin/users/${user.userId}/edit`}>
                 <Pencil className="h-4 w-4" />
                 Edit
               </Link>

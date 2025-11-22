@@ -15,7 +15,7 @@ export default function AdminUserCreatePage() {
 
       <Card className="p-6">
         <CreateUserForm
-          id=""
+          employeeId="" // Changed from userId to employeeId
           firstName=""
           lastName=""
           employeeCode=""

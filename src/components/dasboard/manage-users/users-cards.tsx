@@ -9,14 +9,14 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 interface UsersCardsProps {
   users: User[];
   onEdit: (user: User) => void;
-  onDelete: (user: User) => void;
+  onDisable: (user: User) => void;
   onView: (user: User) => void;
 }
 
 export function UsersCards({
   users,
   onEdit,
-  onDelete,
+  onDisable,
   onView,
 }: UsersCardsProps) {
   const getRoleBadgeColor = (role: string) => {
@@ -39,7 +39,7 @@ export function UsersCards({
     <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-4 p-2 sm:p-3">
       {users.map((user) => (
         <Card
-          key={user.id}
+          key={user.userId}
           className="shadow-sm transition-shadow hover:shadow-md gap-0 py-0 h-full"
         >
           <CardHeader className="p-4 pb-3 sm:p-5 sm:pb-3">
@@ -63,7 +63,7 @@ export function UsersCards({
                 <UsersActions
                   user={user}
                   onEdit={() => onEdit(user)}
-                  onDelete={() => onDelete(user)}
+                  onDisable={() => onDisable(user)}
                 />
               </div>
             </div>

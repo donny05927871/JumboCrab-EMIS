@@ -6,21 +6,23 @@ export async function GET(
   context: { params: { id: string } } | { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = await Promise.resolve(
+    const { id: employeeId } = await Promise.resolve(
       (context as any)?.params ?? { id: undefined }
     );
 
-    if (!id) {
+    if (!employeeId) {
       return NextResponse.json(
         { error: "Employee ID is required" },
         { status: 400 }
       );
     }
 
-    const employee = await db.employee.findUnique({ where: { id } });
+    const employee = await db.employee.findUnique({
+      where: { employeeId },
+    });
     if (!employee) {
       return NextResponse.json(
-        { error: `Employee with ID ${id} not found` },
+        { error: `Employee with ID ${employeeId} not found` },
         { status: 404 }
       );
     }
@@ -45,9 +47,9 @@ export async function DELETE(
     const url = new URL(req.url);
     const segments = url.pathname.split("/").filter(Boolean);
     const idFromPath = segments[segments.length - 1];
-    const id = resolvedParams?.id ?? idFromPath;
+    const employeeId = resolvedParams?.id ?? idFromPath;
 
-    if (!id) {
+    if (!employeeId) {
       return NextResponse.json(
         { error: "Employee ID is required" },
         { status: 400 }
@@ -55,12 +57,12 @@ export async function DELETE(
     }
 
     const existing = await db.employee.findUnique({
-      where: { id },
-      select: { id: true, userId: true },
+      where: { employeeId },
+      select: { employeeId: true, userId: true },
     });
     if (!existing) {
       return NextResponse.json(
-        { error: `Employee with ID ${id} not found` },
+        { error: `Employee with ID ${employeeId} not found` },
         { status: 404 }
       );
     }
@@ -68,11 +70,11 @@ export async function DELETE(
     await db.$transaction(async (tx) => {
       if (existing.userId) {
         await tx.employee.update({
-          where: { id },
+          where: { employeeId },
           data: { userId: null },
         });
       }
-      await tx.employee.delete({ where: { id } });
+      await tx.employee.delete({ where: { employeeId } });
     });
     return NextResponse.json({ success: true });
   } catch (error) {

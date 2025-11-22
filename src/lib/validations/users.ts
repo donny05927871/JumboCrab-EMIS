@@ -12,7 +12,7 @@ type UserFormData = Omit<
 };
 
 export const userSchema = z.object({
-  id: z.string().optional(),
+  userId: z.string().optional(),
   username: z.string().min(1, "Username is required"),
   email: z.string().email("Invalid email address"),
   role: z.enum(Roles).default(Roles.employee),

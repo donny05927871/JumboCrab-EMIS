@@ -7,7 +7,7 @@ export async function fetchSession() {
   try {
     const session = await getSession();
 
-    if (!session.Id) {
+    if (!session.userId) {
       return {
         success: true,
         session: { isLoggedIn: false },
@@ -16,7 +16,7 @@ export async function fetchSession() {
 
     // Fetch the user with employee data
     const user = await db.user.findUnique({
-      where: { id: session.Id },
+      where: { userId: session.userId },
       include: {
         employee: true,
       },
@@ -30,7 +30,7 @@ export async function fetchSession() {
     }
 
     const plainSession = {
-      id: user.id,
+      userId: user.userId,
       username: user.username,
       email: user.email,
       role: user.role,

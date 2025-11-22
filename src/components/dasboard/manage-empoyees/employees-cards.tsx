@@ -16,7 +16,6 @@ import { EmployeesActions } from "./employees-crud";
 import { Separator } from "@/components/ui/separator";
 import { useEmployees } from "./employees-provider";
 
-
 export default function EmployeesCards({
   employees,
 }: {
@@ -48,13 +47,13 @@ export default function EmployeesCards({
 
   // Handle archive employee
   const handleArchiveClick = (employee: Employee) => {
-    if (!employee.id) return;
+    if (!employee.employeeId) return;
     const confirmed = window.confirm(
       `Archive ${employee.firstName ?? ""} ${employee.lastName ?? ""}?`
     );
     if (!confirmed) return;
 
-    fetch(`/api/employees/${employee.id}/archive`, {
+    fetch(`/api/employees/${employee.employeeId}/archive`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ isArchived: true }),
@@ -68,13 +67,15 @@ export default function EmployeesCards({
       })
       .catch((err) => {
         console.error("Archive failed:", err);
-        alert(err instanceof Error ? err.message : "Failed to archive employee");
+        alert(
+          err instanceof Error ? err.message : "Failed to archive employee"
+        );
       });
   };
 
   const handleUnarchiveClick = (employee: Employee) => {
-    if (!employee.id) return;
-    fetch(`/api/employees/${employee.id}/archive`, {
+    if (!employee.employeeId) return;
+    fetch(`/api/employees/${employee.employeeId}/archive`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ isArchived: false }),
@@ -88,18 +89,22 @@ export default function EmployeesCards({
       })
       .catch((err) => {
         console.error("Unarchive failed:", err);
-        alert(err instanceof Error ? err.message : "Failed to unarchive employee");
+        alert(
+          err instanceof Error ? err.message : "Failed to unarchive employee"
+        );
       });
   };
 
   const handleDeleteClick = (employee: Employee) => {
-    if (!employee.id) return;
+    if (!employee.employeeId) return;
     const confirmed = window.confirm(
-      `Permanently delete ${employee.firstName ?? ""} ${employee.lastName ?? ""}?`
+      `Permanently delete ${employee.firstName ?? ""} ${
+        employee.lastName ?? ""
+      }?`
     );
     if (!confirmed) return;
 
-    fetch(`/api/employees/${employee.id}`, { method: "DELETE" })
+    fetch(`/api/employees/${employee.employeeId}`, { method: "DELETE" })
       .then(async (res) => {
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
@@ -164,17 +169,17 @@ export default function EmployeesCards({
       <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4 p-4">
         {currentItems.map((employee) => (
           <div
-            key={employee.id}
+            key={employee.employeeId}
             className="bg-card text-card-foreground rounded-xl border border-border p-4 shadow-sm hover:shadow-md transition-shadow flex flex-col min-h-[320px]"
           >
             <div className="flex-1 flex flex-col">
               {/* Header with Avatar and Name */}
-                <div className="flex justify-between items-start w-full gap-2">
-                  <div className="flex items-center space-x-2 flex-1 min-w-0">
-                    <div className="w-12 h-12 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
-                      <span className="font-semibold text-base">
-                        {employee.firstName?.charAt(0)}
-                        {employee.lastName?.charAt(0)}
+              <div className="flex justify-between items-start w-full gap-2">
+                <div className="flex items-center space-x-2 flex-1 min-w-0">
+                  <div className="w-12 h-12 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                    <span className="font-semibold text-base">
+                      {employee.firstName?.charAt(0)}
+                      {employee.lastName?.charAt(0)}
                     </span>
                   </div>
                   {/* Name/position: allow two lines for name to avoid over-truncation */}
@@ -290,11 +295,11 @@ export default function EmployeesCards({
                   )}
                 </div>
               </div>
-                {/* Status and Preview */}
-                <Separator className="my-2" />
-                <div>
-                  <div className="flex justify-between items-center w-full">
-                    {(() => {
+              {/* Status and Preview */}
+              <Separator className="my-2" />
+              <div>
+                <div className="flex justify-between items-center w-full">
+                  {(() => {
                     const statusStyles: Record<string, string> = {
                       ACTIVE:
                         "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-100",
@@ -313,7 +318,9 @@ export default function EmployeesCards({
                       : "Inactive";
 
                     return (
-                      <div className={`mr-auto px-3 py-1 rounded-full text-xs font-medium ${badgeClass}`}>
+                      <div
+                        className={`mr-auto px-3 py-1 rounded-full text-xs font-medium ${badgeClass}`}
+                      >
                         {statusLabel}
                       </div>
                     );
@@ -323,12 +330,12 @@ export default function EmployeesCards({
                       variant="outline"
                       size="sm"
                       onClick={() =>
-                        employee.id && handleViewEmployee(employee.id)
+                        employee.employeeId &&
+                        handleViewEmployee(employee.employeeId)
                       }
                     >
                       View
                     </Button>
-                 
                   </div>
                 </div>
               </div>

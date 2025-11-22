@@ -37,7 +37,7 @@ export type SUFFIX = (typeof SUFFIX)[number];
 export const EMPLOYEE_CODE_REGEX = /^EMP-\d{3}$/;
 
 export const employeeSchema = z.object({
-  id: z.string().optional(),
+  employeeId: z.string().optional(),
   userId: z.string().optional().nullable(),
   employeeCode: z
     .string()
@@ -93,7 +93,7 @@ export const employeeSchema = z.object({
     .pipe(z.coerce.date())
     .optional()
     .nullable(),
-  isEnded: z.boolean().optional(),
+  isEnded: z.boolean().optional().nullable(),
   position: z.string().min(1, "Position is required"),
   department: z.string().min(1, "Department is required"),
   employmentStatus: z.enum(EMPLOYMENT_STATUS),

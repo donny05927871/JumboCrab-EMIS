@@ -13,10 +13,10 @@ import { User } from "@/lib/validations/users";
 interface UsersActionsProps {
   user: User;
   onEdit: () => void;
-  onDelete: () => void;
+  onDisable: () => void;
 }
 
-export function UsersActions({ user, onEdit, onDelete }: UsersActionsProps) {
+export function UsersActions({ user, onEdit, onDisable }: UsersActionsProps) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -26,14 +26,12 @@ export function UsersActions({ user, onEdit, onDelete }: UsersActionsProps) {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={onEdit}>
-          Edit
-        </DropdownMenuItem>
+        <DropdownMenuItem onClick={onEdit}>Edit</DropdownMenuItem>
         <DropdownMenuItem
           className="text-red-600 focus:bg-red-50 focus:text-red-700"
-          onClick={onDelete}
+          onClick={onDisable}
         >
-          Delete
+          Archive
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

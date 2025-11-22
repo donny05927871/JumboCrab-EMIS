@@ -29,10 +29,33 @@ function UsersPageContent() {
     // Add your edit logic here
   };
 
-  const handleDelete = (user: any) => {
+  // PLEASE CONTINUE HERE NOT YET DONE IMPLEMENTING DISABLE FUNCTIONALITY//
+  const handleDisable = (user: any) => {
     if (confirm(`Are you sure you want to delete ${user.username}?`)) {
-      console.log("Delete user:", user.id);
-      // Add your delete logic here
+      if (!user.id) return;
+      const confirmed = window.confirm(
+        `Archive ${user.firstName ?? ""} ${user.lastName ?? ""}?`
+      );
+      if (!confirmed) return;
+
+      fetch(`/api/users/${user.id}/archive`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isDisabled: true }),
+      })
+        .then(async (res) => {
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.error || "Failed to archive employee");
+          }
+          // await refreshUsers();
+        })
+        .catch((err) => {
+          console.error("Archive failed:", err);
+          alert(
+            err instanceof Error ? err.message : "Failed to archive employee"
+          );
+        });
     }
   };
 
@@ -103,7 +126,7 @@ function UsersPageContent() {
             <UsersCards
               users={managementUsers}
               onEdit={handleEdit}
-              onDelete={handleDelete}
+              onDisable={handleDisable}
               onView={handleView}
             />
           ) : (
@@ -139,7 +162,7 @@ function UsersPageContent() {
             <UsersCards
               users={employeeUsers}
               onEdit={handleEdit}
-              onDelete={handleDelete}
+              onDisable={handleDisable}
               onView={handleView}
             />
           ) : (

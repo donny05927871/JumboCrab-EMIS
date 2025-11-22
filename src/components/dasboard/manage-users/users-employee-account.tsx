@@ -8,8 +8,9 @@ interface AddUsersEmployeeAccountProps {
   onAssign: (employee: Employee) => void;
 }
 // Define the Employee type based on the data structure
+
 interface Employee {
-  id: string;
+  employeeId: string; // Changed from id to employeeId
   firstName: string;
   lastName: string;
   employeeCode: string;
@@ -68,7 +69,7 @@ const AddUsersEmployeeAccount = ({
           </div>
           {employees.map((employee) => (
             <div
-              key={employee.id}
+              key={employee.employeeId}
               className="grid grid-cols-3 gap-4 py-2 border-b"
             >
               <div>{employee.employeeCode}</div>

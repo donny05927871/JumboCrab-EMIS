@@ -24,11 +24,11 @@ import AddUsersEmployeeAccount from "./users-employee-account";
 import { useRouter } from "next/navigation";
 
 type Employee = {
-  id: string;
+  employeeId: string; // Changed from id to employeeId
   firstName: string;
   lastName: string;
   employeeCode: string;
-  email: string | null;
+  email?: string | null;
 };
 
 const CreateUserForm = (employee: Employee) => {
@@ -112,7 +112,7 @@ const CreateUserForm = (employee: Employee) => {
           employee: selectedEmployee
             ? `${selectedEmployee.firstName} ${selectedEmployee.lastName}`
             : null,
-          employeeId: selectedEmployee?.id || null,
+          employeeId: selectedEmployee?.employeeId || null,
         }),
       });
 
@@ -278,9 +278,11 @@ const CreateUserForm = (employee: Employee) => {
                   Select Employee
                 </label>
                 <Select
-                  value={selectedEmployee?.id || ""}
+                  value={selectedEmployee?.employeeId || ""}
                   onValueChange={(value) => {
-                    const employee = employees.find((emp) => emp.id === value);
+                    const employee = employees.find(
+                      (emp) => emp.employeeId === value
+                    );
                     setSelectedEmployee(employee || null);
                   }}
                 >
@@ -313,7 +315,10 @@ const CreateUserForm = (employee: Employee) => {
                           .includes(searchTerm.toLowerCase())
                       )
                       .map((employee) => (
-                        <SelectItem key={employee.id} value={employee.id}>
+                        <SelectItem
+                          key={employee.employeeId}
+                          value={employee.employeeId}
+                        >
                           <div className="flex items-center gap-2">
                             <span className="font-medium">
                               {employee.employeeCode}

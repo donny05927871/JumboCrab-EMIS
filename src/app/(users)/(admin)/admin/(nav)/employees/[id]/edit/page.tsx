@@ -96,15 +96,15 @@ function EmployeeEditPageContent({
           </p>
         </div>
         <Button asChild variant="outline" className="gap-2">
-          <Link href={`/admin/employees/${employee.id}/view`}>
+          <Link href={`/admin/employees/${employee.employeeId}/view`}>
             <ArrowLeft className="h-4 w-4" />
             Back to View
           </Link>
         </Button>
       </div>
-      {employee?.id && (
+      {employee?.employeeId && (
         <EmployeeForm
-          employeeId={employee.id}
+          employeeId={employee.employeeId}
           mode="edit"
           initialData={employee}
         />

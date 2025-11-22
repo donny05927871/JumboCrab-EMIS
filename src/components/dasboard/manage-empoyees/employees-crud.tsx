@@ -41,12 +41,12 @@ export function EmployeesActions({
       <DropdownMenuContent align="end" className="w-40">
         {!isArchivedView ? (
           <>
-            <DropdownMenuItem 
+            <DropdownMenuItem
               onClick={() => {
                 if (employee.id) {
-                  onEdit(employee.id);
+                  onEdit(employee.employeeId);
                 } else {
-                  console.error('Cannot edit: Employee ID is missing');
+                  console.error("Cannot edit: Employee ID is missing");
                 }
               }}
               disabled={!employee.id}
@@ -64,9 +64,7 @@ export function EmployeesActions({
           </>
         ) : (
           <>
-            <DropdownMenuItem
-              onClick={() => onUnarchive?.(employee)}
-            >
+            <DropdownMenuItem onClick={() => onUnarchive?.(employee)}>
               <Archive className="mr-2 h-4 w-4 rotate-180" />
               Unarchive
             </DropdownMenuItem>

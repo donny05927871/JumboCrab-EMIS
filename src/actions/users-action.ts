@@ -49,9 +49,9 @@ export async function getUserById(id: string | undefined): Promise<{
 
     // Query the database for a single user with the specified ID and include employee data
     const user = await db.user.findUnique({
-      where: { id },
+      where: { userId: id }, // Changed from { id }
       include: {
-        employee: true, // This will include the related employee record if it exists
+        employee: true,
       },
     });
 

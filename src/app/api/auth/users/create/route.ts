@@ -75,7 +75,7 @@ export async function POST(request: NextRequest) {
     // Check if employee exists and is not already associated with a user
     if (role === "employee" && employeeId) {
       const employee = await db.employee.findUnique({
-        where: { id: employeeId },
+        where: { employeeId: employeeId },
         include: { user: true },
       });
 
@@ -107,7 +107,7 @@ export async function POST(request: NextRequest) {
       ...(role === "employee" &&
         employeeId && {
           employee: {
-            connect: { id: employeeId },
+            connect: { employeeId: employeeId },
           },
         }),
     };
@@ -116,7 +116,7 @@ export async function POST(request: NextRequest) {
     const user = await db.user.create({
       data: userData,
       select: {
-        id: true,
+        userId: true,
         username: true,
         email: true,
         role: true,
@@ -125,7 +125,7 @@ export async function POST(request: NextRequest) {
         updatedAt: true,
         employee: {
           select: {
-            id: true,
+            employeeId: true,
             employeeCode: true,
             firstName: true,
             lastName: true,

@@ -8,21 +8,20 @@ datasource db {
 }
 
 model User {
-  userId   String    @id @default(cuid())
-  username String    @unique
-  email    String    @unique
-  password String
-  salt     String
-  role     Roles
-  employee Employee? // One-to-one relation with Employee
-
-  isDisabled Boolean  @default(false)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  userId     String    @id @default(cuid())
+  username   String    @unique
+  email      String    @unique
+  password   String
+  salt       String
+  role       Roles
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  isDisabled Boolean   @default(false)
+  employee   Employee?
 }
 
 model Employee {
-  employeeId                   String            @id
+  employeeId                   String            @id @default(cuid())
   employeeCode                 String            @unique
   firstName                    String
   lastName                     String
@@ -55,10 +54,8 @@ model Employee {
   isArchived                   Boolean           @default(false)
   createdAt                    DateTime          @default(now())
   updatedAt                    DateTime          @updatedAt
-
-  //One is to One relationship with Model User
-  user   User?   @relation(fields: [userId], references: [userId])
-  userId String? @unique // Foreign key
+  userId                       String?           @unique
+  user                         User?             @relation(fields: [userId], references: [userId])
 }
 
 enum GENDER {

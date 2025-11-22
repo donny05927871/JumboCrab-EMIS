@@ -26,6 +26,22 @@ export const userSchema = z.object({
 export type User = z.infer<typeof userSchema>;
 export type UserFormValues = User; // Alias for consistency with your codebase
 
+export type UserWithEmployee = User & {
+  employee?: {
+    employeeId?: string | null;
+    employeeCode?: string | null;
+    firstName?: string | null;
+    lastName?: string | null;
+    position?: string | null;
+    department?: string | null;
+    employmentStatus?: string | null;
+    currentStatus?: string | null;
+    startDate?: Date | string | null;
+    endDate?: Date | string | null;
+    img?: string | null;
+  } | null;
+};
+
 export function validateUser(data: unknown): {
   success: boolean;
   data?: User;

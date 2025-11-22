@@ -1,5 +1,4 @@
 "use client";
-"use client";
 import { useState, useEffect } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -20,7 +19,6 @@ import {
 import { Eye, EyeOff, Search } from "lucide-react";
 import { Roles } from "@prisma/client";
 import { getEmployeesWithoutUser } from "@/actions/employees-action";
-import AddUsersEmployeeAccount from "./users-employee-account";
 import { useRouter } from "next/navigation";
 
 type Employee = {
@@ -31,12 +29,18 @@ type Employee = {
   email?: string | null;
 };
 
-const CreateUserForm = (employee: Employee) => {
+type CreateUserFormProps = {
+  defaultEmployeeId?: string;
+};
+
+const CreateUserForm = ({ defaultEmployeeId }: CreateUserFormProps) => {
   const router = useRouter();
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState<Roles | "">("");
+  const [role, setRole] = useState<Roles | "">(
+    defaultEmployeeId ? Roles.employee : ""
+  );
   const [showPassword, setShowPassword] = useState(false);
   const [roleError, setRoleError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -49,12 +53,22 @@ const CreateUserForm = (employee: Employee) => {
 
   useEffect(() => {
     const fetchEmployees = async () => {
-      if (role === "employee") {
+      if (role === "employee" || defaultEmployeeId) {
         setIsLoading(true);
         try {
           const response = await getEmployeesWithoutUser();
           if (response.success && response.data) {
             setEmployees(response.data);
+            if (defaultEmployeeId) {
+              const match = response.data.find(
+                (emp) => emp.employeeId === defaultEmployeeId
+              );
+              if (match) {
+                setSelectedEmployee(match);
+                setEmail(match.email ?? "");
+                setRole(Roles.employee);
+              }
+            }
           } else {
             console.error("Failed to fetch employees:", response.error);
           }
@@ -66,7 +80,7 @@ const CreateUserForm = (employee: Employee) => {
       }
     };
     fetchEmployees();
-  }, [role]);
+  }, [role, defaultEmployeeId]);
 
   useEffect(() => {
     if (role !== "employee") {
@@ -77,6 +91,13 @@ const CreateUserForm = (employee: Employee) => {
 
     setEmail(selectedEmployee?.email ?? "");
   }, [role, selectedEmployee]);
+
+  useEffect(() => {
+    if (selectedEmployee) {
+      setRole(Roles.employee);
+      setEmail(selectedEmployee.email ?? "");
+    }
+  }, [selectedEmployee]);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -144,14 +165,9 @@ const CreateUserForm = (employee: Employee) => {
       setLoading(false);
     }
   };
-  const handleAssignEmployee = (employee: Employee) => {
-    setSelectedEmployee(employee);
-    setEmail(employee.email || "");
-    setRole("employee");
-  };
   return (
-    <div className="flex flex-col items-center justify-center h-screen p-6">
-      <Card className="w-full max-w-2xl">
+    <div className="w-full max-w-4xl mx-auto">
+      <Card className="shadow-sm border border-border/70">
         <CardHeader>
           <CardTitle className="text-2xl font-bold">Create New User</CardTitle>
           <CardDescription>
@@ -284,6 +300,7 @@ const CreateUserForm = (employee: Employee) => {
                       (emp) => emp.employeeId === value
                     );
                     setSelectedEmployee(employee || null);
+                    setEmail(employee?.email ?? "");
                   }}
                 >
                   <SelectTrigger className="w-full bg-background text-foreground">
@@ -346,16 +363,19 @@ const CreateUserForm = (employee: Employee) => {
             )}
 
             <div className="flex justify-end gap-4 pt-4">
-              <Button variant="outline" type="button">
+              <Button
+                variant="outline"
+                type="button"
+                onClick={() => router.push("/admin/users")}
+              >
                 Cancel
               </Button>
-              <Button type="submit">Create User</Button>
+              <Button type="submit" disabled={loading}>
+                {loading ? "Creating..." : "Create User"}
+              </Button>
             </div>
           </form>
         </CardContent>
-      </Card>
-      <Card className="mt-6 w-[60%]">
-        <AddUsersEmployeeAccount onAssign={handleAssignEmployee} />
       </Card>
     </div>
   );

@@ -22,6 +22,13 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    if (result.user.isDisabled) {
+      return NextResponse.json(
+        { error: "Account is disabled. Contact an administrator." },
+        { status: 403 }
+      );
+    }
     // Create session for the new user
     const session = await getSession();
     session.userId = result.user.userId;

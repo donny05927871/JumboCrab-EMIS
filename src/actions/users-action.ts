@@ -2,17 +2,42 @@
 
 import { db } from "@/lib/db";
 import { prisma } from "@/lib/prisma";
-import { Employee } from "@prisma/client";
-import type { User as PrismaUser } from "@prisma/client";
+import type { UserWithEmployee } from "@/lib/validations/users";
+
+const baseUserSelect = {
+  userId: true,
+  username: true,
+  email: true,
+  role: true,
+  isDisabled: true,
+  createdAt: true,
+  updatedAt: true,
+  employee: {
+    select: {
+      employeeId: true,
+      employeeCode: true,
+      firstName: true,
+      lastName: true,
+      position: true,
+      department: true,
+      employmentStatus: true,
+      currentStatus: true,
+      startDate: true,
+      endDate: true,
+      img: true,
+    },
+  },
+} as const;
 
 // ========= GET USERS ========= /
 export async function getUsers(): Promise<{
   success: boolean;
-  data: PrismaUser[] | null;
+  data: UserWithEmployee[] | null;
   error: string | null;
 }> {
   try {
     const users = await prisma.user.findMany({
+      select: baseUserSelect,
       orderBy: {
         createdAt: "desc",
       },
@@ -36,7 +61,7 @@ export async function getUsers(): Promise<{
  */
 export async function getUserById(id: string | undefined): Promise<{
   success: boolean;
-  data?: (PrismaUser & { employee: Employee | null }) | null;
+  data?: UserWithEmployee | null;
   error?: string;
 }> {
   try {
@@ -50,9 +75,7 @@ export async function getUserById(id: string | undefined): Promise<{
     // Query the database for a single user with the specified ID and include employee data
     const user = await db.user.findUnique({
       where: { userId: id }, // Changed from { id }
-      include: {
-        employee: true,
-      },
+      select: baseUserSelect,
     });
 
     // If no user is found, return an error
@@ -66,10 +89,7 @@ export async function getUserById(id: string | undefined): Promise<{
     // Return the found user with employee data (if any)
     return {
       success: true,
-      data: {
-        ...user,
-        employee: user.employee || null, // Ensure employee is null if not found
-      },
+      data: user,
     };
   } catch (error) {
     // Log the error and return a generic error message
@@ -85,14 +105,12 @@ export async function getUserById(id: string | undefined): Promise<{
 
 export async function getUsersWithEmployeeAccount(): Promise<{
   success: boolean;
-  data: (PrismaUser & { employee: Employee | null })[] | null;
+  data: UserWithEmployee[] | null;
   error: string | null;
 }> {
   try {
     const users = await prisma.user.findMany({
-      include: {
-        employee: true, // This will include the related employee data
-      },
+      select: baseUserSelect,
       orderBy: {
         createdAt: "desc",
       },

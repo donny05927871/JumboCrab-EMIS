@@ -31,7 +31,7 @@ export function useSession() {
         const rawSession = result.session as unknown as RawSession;
 
         const userData: User = {
-          id: rawSession.id || "",
+          userId: rawSession.id || "",
           username: rawSession.username || "",
           email: rawSession.email || "",
           role: rawSession.role as any,

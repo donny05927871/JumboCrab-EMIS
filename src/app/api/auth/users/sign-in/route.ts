@@ -23,6 +23,13 @@ export async function POST(request: Request) {
       );
     }
 
+    if (result.user?.isDisabled) {
+      return NextResponse.json(
+        { error: "Account is disabled. Contact an administrator." },
+        { status: 403 }
+      );
+    }
+
     // Set session cookie
     const session = await getSession();
     session.userId = result.user?.userId;

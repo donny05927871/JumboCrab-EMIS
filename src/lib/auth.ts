@@ -115,6 +115,7 @@ export async function signIn(username: string, password: string) {
         username: user.username,
         email: user.email,
         role: user.role,
+        isDisabled: user.isDisabled,
         employee: user.employee,
       },
     };

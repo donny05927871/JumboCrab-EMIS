@@ -10,8 +10,8 @@ import {
 } from "@/components/dasboard/manage-empoyees/employees-provider";
 import dynamic from "next/dynamic";
 
-// Dynamically import the EmployeesTable component with SSR disabled
-const EmployeesTable = dynamic(
+// Dynamically import the EmployeesCard component with SSR disabled
+const EmployeesCard = dynamic(
   () => import("@/components/dasboard/manage-empoyees/employees-cards"),
   { ssr: false, loading: () => <div>Loading table...</div> }
 );
@@ -26,15 +26,12 @@ const EmployeeComboBox = dynamic(
 );
 
 function ResetFiltersButton() {
-  const { 
-    setSearchTerm, 
-    setSelectedDepartment, 
-    setSelectedStatus 
-  } = useEmployees();
+  const { setSearchTerm, setSelectedDepartment, setSelectedStatus } =
+    useEmployees();
 
   return (
-    <Button 
-      variant="outline" 
+    <Button
+      variant="outline"
       onClick={() => {
         setSearchTerm("");
         setSelectedDepartment(null);
@@ -48,13 +45,8 @@ function ResetFiltersButton() {
 }
 
 function EmployeesContent() {
-  const {
-    filteredEmployees,
-    loading,
-    error,
-    showArchived,
-    setShowArchived,
-  } = useEmployees();
+  const { filteredEmployees, loading, error, showArchived, setShowArchived } =
+    useEmployees();
   const router = useRouter();
 
   if (loading) {
@@ -122,7 +114,7 @@ function EmployeesContent() {
         </div>
         <div className="overflow-x-auto">
           {filteredEmployees.length > 0 ? (
-            <EmployeesTable employees={filteredEmployees} />
+            <EmployeesCard employees={filteredEmployees} />
           ) : (
             <div className="text-center py-12">
               <div className="mx-auto h-24 w-24 text-muted-foreground opacity-40 mb-4">
@@ -141,7 +133,9 @@ function EmployeesContent() {
                   <line x1="8" y1="12" x2="16" y2="12"></line>
                 </svg>
               </div>
-              <h3 className="text-lg font-medium text-foreground">No employees found</h3>
+              <h3 className="text-lg font-medium text-foreground">
+                No employees found
+              </h3>
               <p className="mt-1 text-sm text-muted-foreground">
                 Try adjusting your search or filter criteria
               </p>

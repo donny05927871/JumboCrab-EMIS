@@ -1,24 +1,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Card } from "@/components/ui/card";
 import CreateUserForm from "@/components/dasboard/manage-users/users-create-form";
 
-export default function AdminUserCreatePage({
-  searchParams,
-}: {
-  searchParams?: { employeeId?: string } | Promise<{ employeeId?: string }>;
-}) {
+export default function AdminUserCreatePage() {
+  const searchParams = useSearchParams();
   const [defaultEmployeeId, setDefaultEmployeeId] = useState<string | undefined>(
     undefined
   );
 
   useEffect(() => {
-    const resolveParams = async () => {
-      const resolved = await Promise.resolve(searchParams);
-      setDefaultEmployeeId(resolved?.employeeId);
-    };
-    resolveParams();
+    // Using client-side search params is more reliable after navigations/prefetch, especially on mobile
+    setDefaultEmployeeId(searchParams.get("employeeId") || undefined);
   }, [searchParams]);
 
   return (

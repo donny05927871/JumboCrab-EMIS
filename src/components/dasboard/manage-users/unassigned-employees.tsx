@@ -99,7 +99,7 @@ export function UnassignedEmployees() {
 
       {!loading && !error && filtered.length > 0 && (
         <div className="rounded-2xl border border-border/70 bg-card/60 shadow-sm overflow-hidden">
-          <div className="grid grid-cols-12 gap-3 px-4 py-3 text-sm font-medium text-muted-foreground border-b border-border/70">
+          <div className="hidden md:grid grid-cols-12 gap-3 px-4 py-3 text-sm font-medium text-muted-foreground border-b border-border/70">
             <div className="col-span-3">Employee Code</div>
             <div className="col-span-4">Name</div>
             <div className="col-span-3">Email</div>
@@ -109,20 +109,34 @@ export function UnassignedEmployees() {
             {filtered.map((emp) => (
               <div
                 key={emp.employeeId}
-                className="grid grid-cols-12 gap-3 px-4 py-3 text-sm items-center"
+                className="grid grid-cols-1 gap-3 px-4 py-4 text-sm items-start md:grid-cols-12 md:items-center"
               >
-                <div className="col-span-3 font-medium">{emp.employeeCode}</div>
-                <div className="col-span-4">
+                <div className="md:col-span-3 font-medium">
+                  <p className="text-xs text-muted-foreground md:hidden">Code</p>
+                  {emp.employeeCode}
+                </div>
+                <div className="md:col-span-4">
+                  <p className="text-xs text-muted-foreground md:hidden">Name</p>
                   {emp.firstName} {emp.lastName}
                 </div>
-                <div className="col-span-3 truncate text-muted-foreground">
+                <div className="md:col-span-3 text-muted-foreground">
+                  <p className="text-xs text-muted-foreground md:hidden">Email</p>
                   {emp.email || "No email"}
                 </div>
-                <div className="col-span-2 flex justify-end gap-2">
-                  <Button variant="outline" size="sm" onClick={() => handleViewEmployee(emp.employeeId)}>
+                <div className="md:col-span-2 flex flex-col gap-2 md:flex-row md:justify-end">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleViewEmployee(emp.employeeId)}
+                    className="w-full md:w-auto"
+                  >
                     View
                   </Button>
-                  <Button size="sm" onClick={() => handleCreate(emp.employeeId)}>
+                  <Button
+                    size="sm"
+                    onClick={() => handleCreate(emp.employeeId)}
+                    className="w-full md:w-auto"
+                  >
                     Create account
                   </Button>
                 </div>

@@ -43,11 +43,11 @@ export function EmployeesActions({
           <>
             <DropdownMenuItem
               onClick={() => {
-                if (!employee.employeeId) {
+                if (employee.employeeId) {
+                  onEdit(employee.employeeId);
+                } else {
                   console.error("Cannot edit: Employee ID is missing");
-                  return;
                 }
-                onEdit(employee.employeeId);
               }}
               disabled={!employee.employeeId}
             >

@@ -32,7 +32,6 @@ function UsersPageContent() {
     router.push(`/admin/users/${user.userId}/edit`);
   };
 
-  // PLEASE CONTINUE HERE NOT YET DONE IMPLEMENTING DISABLE FUNCTIONALITY//
   const toggleDisable = async (user: any, isDisabled: boolean) => {
     if (!user?.userId) return;
     const confirmed = window.confirm(
@@ -61,7 +60,9 @@ function UsersPageContent() {
 
   const handleDelete = async (user: any) => {
     if (!user?.userId) return;
-    const confirmed = window.confirm(`Delete ${user.username}? This cannot be undone.`);
+    const confirmed = window.confirm(
+      `Delete ${user.username}? This cannot be undone.`
+    );
     if (!confirmed) return;
     try {
       const res = await fetch(`/api/users/${user.userId}`, {
@@ -217,7 +218,9 @@ function UsersPageContent() {
               <p className="text-xs uppercase tracking-widest text-muted-foreground">
                 Status
               </p>
-              <h2 className="text-2xl font-semibold text-destructive">Disabled Accounts</h2>
+              <h2 className="text-2xl font-semibold text-destructive">
+                Disabled Accounts
+              </h2>
               <p className="text-sm text-muted-foreground">
                 Accounts that cannot sign in
               </p>

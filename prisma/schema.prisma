@@ -62,7 +62,7 @@ model Employee {
   governmentId                 GovernmentId?     @relation("EmployeeGovernmentId")
   contribution                 EmployeeContribution?
 }
-
+// ======== EMPLOYEE CONTRIBUTION ========= //
 model GovernmentId {
   governmentId      String   @id @default(cuid())
   sssNumber         String?
@@ -99,7 +99,7 @@ model EmployeeContribution {
   createdBy     User?    @relation("EmployeeContributionCreatedBy", fields: [createdById], references: [userId])
   updatedBy     User?    @relation("EmployeeContributionUpdatedBy", fields: [updatedById], references: [userId])
 }
-
+// ======== SHEDULE AND SHIFTS ========= //
 
 enum GENDER {
   MALE

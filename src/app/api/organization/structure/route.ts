@@ -31,10 +31,31 @@ export async function GET() {
       user: undefined,
     }));
 
+    type EmployeePayload = (typeof payload)[number];
+    const supervisorGroups = supervisors.map((sup) => ({
+      supervisor: sup,
+      reports: [] as EmployeePayload[],
+    }));
+    const reportsBySupervisor = new Map<string, EmployeePayload[]>(
+      supervisorGroups.map((group) => [group.supervisor.userId, group.reports])
+    );
+    const unassigned: EmployeePayload[] = [];
+
+    payload.forEach((emp) => {
+      const bucket = emp.supervisorUserId ? reportsBySupervisor.get(emp.supervisorUserId) : undefined;
+      if (bucket) {
+        bucket.push(emp);
+      } else {
+        unassigned.push(emp);
+      }
+    });
+
     return NextResponse.json({
       success: true,
       data: payload,
       supervisors,
+      supervisorGroups,
+      unassigned,
     });
   } catch (error) {
     console.error("Failed to fetch organization structure", error);

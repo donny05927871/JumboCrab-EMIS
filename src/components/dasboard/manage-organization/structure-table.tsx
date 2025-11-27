@@ -12,9 +12,9 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 
 type StructureRow = {
   employeeId: string;
@@ -42,6 +42,7 @@ export function StructureTable() {
   const [formError, setFormError] = useState<string | null>(null);
   const [deptFilter, setDeptFilter] = useState<string>("");
   const [positionFilter, setPositionFilter] = useState<string>("");
+  const [showUnassignedOnly, setShowUnassignedOnly] = useState(false);
 
   const load = async () => {
     try {
@@ -74,6 +75,7 @@ export function StructureTable() {
       const sup = supUser?.username?.toLowerCase() || "";
       const deptMatch = deptFilter ? row.department?.departmentId === deptFilter : true;
       const posMatch = positionFilter ? row.position?.positionId === positionFilter : true;
+      const unassignedMatch = showUnassignedOnly ? !row.supervisorUserId : true;
       const textMatch =
         !term ||
         fullName.includes(term) ||
@@ -81,9 +83,9 @@ export function StructureTable() {
         dept.includes(term) ||
         pos.includes(term) ||
         sup.includes(term);
-      return textMatch && deptMatch && posMatch;
+      return textMatch && deptMatch && posMatch && unassignedMatch;
     });
-  }, [rows, filter, deptFilter, positionFilter]);
+  }, [rows, filter, deptFilter, positionFilter, showUnassignedOnly]);
 
   const deptOptions = useMemo(() => {
     const map = new Map<string, string>();
@@ -100,6 +102,8 @@ export function StructureTable() {
     });
     return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
   }, [rows]);
+
+  const unassignedRows = useMemo(() => rows.filter((r) => !r.supervisorUserId), [rows]);
 
   const openAssign = (row: StructureRow) => {
     setTarget(row);
@@ -155,6 +159,16 @@ export function StructureTable() {
               className="w-full sm:w-72"
             />
             <div className="flex items-center gap-2">
+              <Button
+                variant={showUnassignedOnly ? "secondary" : "outline"}
+                size="sm"
+                onClick={() => setShowUnassignedOnly((prev) => !prev)}
+                disabled={loading}
+                className="whitespace-nowrap"
+              >
+                {showUnassignedOnly ? "Clear unassigned filter" : "Unassigned only"}{" "}
+                <Badge variant="secondary" className="ml-2">{unassignedRows.length}</Badge>
+              </Button>
               <select
                 className="w-40 rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
                 value={deptFilter}
@@ -187,6 +201,7 @@ export function StructureTable() {
           <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
             {deptFilter && <span className="rounded-full bg-muted px-3 py-1">Department filter on</span>}
             {positionFilter && <span className="rounded-full bg-muted px-3 py-1">Position filter on</span>}
+            {showUnassignedOnly && <span className="rounded-full bg-muted px-3 py-1">Unassigned filter on</span>}
             {!deptFilter && !positionFilter && (
               <span className="rounded-full bg-muted px-3 py-1">All departments/positions</span>
             )}

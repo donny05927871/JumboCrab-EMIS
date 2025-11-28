@@ -192,17 +192,20 @@ const NavSidebar = ({ userRole }: NavSidebarProps) => {
       // Subitems: roles aligned with parent by default
       subItems: [
         {
-          label: "Attendance Directory",
+          label: "Daily Attendance",
           path: "",
           roles: [
             "admin",
             "generalManager",
             "manager",
+            "supervisor",
+            "clerk",
+            "employee",
           ],
         },
         {
-          label: "View Records",
-          path: "/records",
+          label: "Attendance History",
+          path: "/history",
           roles: [
             "admin",
             "generalManager",
@@ -213,8 +216,8 @@ const NavSidebar = ({ userRole }: NavSidebarProps) => {
           ],
         },
         {
-          label: "Reports",
-          path: "/reports",
+          label: "Shift Schedule",
+          path: "/schedule",
           roles: [
             "admin",
             "generalManager",
@@ -222,6 +225,27 @@ const NavSidebar = ({ userRole }: NavSidebarProps) => {
             "supervisor",
             "clerk",
             "employee",
+          ],
+        },
+        {
+          label: "Shifts",
+          path: "/shifts",
+          roles: [
+            "admin",
+            "generalManager",
+            "manager",
+          ],
+        },
+        {
+          label: "My Time",
+          path: "/my-time",
+          roles: [
+            "employee",
+            "supervisor",
+            "manager",
+            "clerk",
+            "generalManager",
+            "admin",
           ],
         },
       ],

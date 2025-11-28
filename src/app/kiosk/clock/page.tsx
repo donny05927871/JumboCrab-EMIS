@@ -1,0 +1,390 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { RefreshCcw, LogIn, LogOut, Coffee, Clock, Shield, Fingerprint } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { formatZonedDate, formatZonedTime, zonedNow } from "@/lib/timezone";
+
+type Punch = {
+  punchTime: string;
+  punchType: string;
+};
+
+type UserSuggestion = {
+  username: string;
+  role: string;
+  employee: {
+    employeeId: string;
+    employeeCode: string;
+    firstName: string;
+    lastName: string;
+  } | null;
+};
+
+type StatusPayload = {
+  user: { username: string; role: string };
+  employee: {
+    employeeId: string;
+    employeeCode: string;
+    firstName: string;
+    lastName: string;
+    department?: { name: string | null } | null;
+    position?: { name: string | null } | null;
+  };
+  expected: { start: number | null; end: number | null; shiftName: string | null; source: string };
+  punches: Punch[];
+  lastPunch: Punch | null;
+  breakCount: number;
+  breakMinutes: number;
+};
+
+const minutesToTime = (mins: number | null) => {
+  if (mins == null) return "—";
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`;
+};
+
+const actionsOrder = ["CLOCK_IN", "BREAK_OUT", "BREAK_IN", "CLOCK_OUT"] as const;
+
+export default function KioskClockPage() {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [authMode, setAuthMode] = useState<"password" | "biometric">("password");
+  const [statusUser, setStatusUser] = useState<string>("");
+  const [status, setStatus] = useState<StatusPayload | null>(null);
+  const [loadingStatus, setLoadingStatus] = useState(false);
+  const [punching, setPunching] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+  const [suggestions, setSuggestions] = useState<UserSuggestion[]>([]);
+  const [fetchingSuggestions, setFetchingSuggestions] = useState(false);
+  const [now, setNow] = useState<Date>(zonedNow());
+  const [mounted, setMounted] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const d = zonedNow();
+    const iso = new Date(d).toLocaleDateString("en-CA", {
+      timeZone: "Asia/Manila",
+    });
+    return iso; // yyyy-mm-dd
+  });
+
+  useEffect(() => {
+    const t = setInterval(() => setNow(zonedNow()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  const loadStatus = async (u: string) => {
+    if (!u) return;
+    try {
+      setLoadingStatus(true);
+      setError(null);
+      const params = new URLSearchParams();
+      params.set("username", u);
+      if (selectedDate) params.set("date", selectedDate);
+      const res = await fetch(`/api/kiosk/attendance?${params.toString()}`);
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error || "Failed to load status");
+      setStatus(json.data);
+    } catch (err) {
+      setStatus(null);
+      setError(err instanceof Error ? err.message : "Failed to load status");
+    } finally {
+      setLoadingStatus(false);
+    }
+  };
+
+  const loadSuggestions = async (term: string) => {
+    try {
+      setFetchingSuggestions(true);
+      const res = await fetch(`/api/kiosk/attendance?query=${encodeURIComponent(term)}`);
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error || "Failed to load suggestions");
+      setSuggestions(json.data ?? []);
+    } catch (err) {
+      setSuggestions([]);
+    } finally {
+      setFetchingSuggestions(false);
+    }
+  };
+
+  useEffect(() => {
+    if (statusUser) loadStatus(statusUser);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusUser]);
+
+  useEffect(() => {
+    const t = setInterval(() => setNow(zonedNow()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+const nextActions = useMemo(() => {
+    const last = status?.lastPunch?.punchType;
+    const allowedNext: Record<Punch["punchType"] | "NONE", Punch["punchType"]> = {
+      NONE: "CLOCK_IN",
+      CLOCK_OUT: "CLOCK_IN",
+      CLOCK_IN: "BREAK_IN",
+      BREAK_IN: "BREAK_OUT",
+      BREAK_OUT: "CLOCK_OUT",
+    };
+    const key = (last as Punch["punchType"]) ?? "NONE";
+    const expected = allowedNext[key as keyof typeof allowedNext];
+    const all = [
+      { type: "CLOCK_IN", label: "Time in", icon: <LogIn className="h-5 w-5" /> },
+      { type: "BREAK_IN", label: "Break in", icon: <Clock className="h-5 w-5" /> },
+      { type: "BREAK_OUT", label: "Break out", icon: <Coffee className="h-5 w-5" /> },
+      { type: "CLOCK_OUT", label: "Time out", icon: <LogOut className="h-5 w-5" /> },
+    ];
+    return all.map((a) => ({ ...a, enabled: a.type === expected }));
+  }, [status?.lastPunch?.punchType]);
+
+  const punch = async (punchType: Punch["punchType"]) => {
+    try {
+      if (authMode === "password" && (!username || !password)) {
+        setError("Username and password required");
+        return;
+      }
+      if (authMode === "biometric") {
+        setError("Biometric mode is not available yet.");
+        return;
+      }
+      setPunching(punchType);
+      setError(null);
+      setInfo(null);
+      const res = await fetch("/api/kiosk/attendance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password, punchType }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error || "Failed to punch");
+      setInfo("Punch recorded");
+      setPassword("");
+      setSuggestions([]);
+      setStatusUser(username);
+      await loadStatus(username);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to punch");
+    } finally {
+      setPunching(null);
+    }
+  };
+
+  return (
+      <div className="min-h-screen bg-muted/20 flex items-center justify-center px-4 py-10">
+      <div className="w-full max-w-5xl space-y-8">
+        <div className="text-center space-y-4">
+          <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Kiosk</p>
+          <h1 className="text-4xl font-semibold">Clock</h1>
+          <p className="text-sm text-muted-foreground">Time in/out and breaks from this device only.</p>
+          <div className="text-6xl font-semibold tracking-tight">
+            {mounted
+              ? formatZonedTime(now, { hour12: true, hour: "2-digit", minute: "2-digit", second: "2-digit" })
+              : "— — : — —"}
+          </div>
+          <div className="text-sm text-muted-foreground">
+            {mounted
+              ? formatZonedDate(selectedDate ? new Date(selectedDate) : now)
+              : "—"}
+          </div>
+        </div>
+
+        <Card className="shadow-sm">
+          <CardHeader className="flex flex-col gap-4">
+            <CardTitle className="text-xl">Enter credentials</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Your username/password are verified for each punch. No session is created.
+            </p>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Shield className="h-4 w-4" />
+                <span>Only allowed IPs can punch (configure ALLOWED_PUNCH_IPS env).</span>
+              </div>
+              <div className="flex flex-wrap gap-2 text-xs">
+                <Button
+                  type="button"
+                  variant={authMode === "password" ? "default" : "outline"}
+                  size="sm"
+                  className="gap-2"
+                  onClick={() => setAuthMode("password")}
+                >
+                  <LogIn className="h-4 w-4" />
+                  Username & password (default)
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                  onClick={() => setAuthMode("biometric")}
+                  disabled
+                >
+                  <Fingerprint className="h-4 w-4" />
+                  Biometric (coming soon)
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Input
+                placeholder="Username"
+                value={username}
+                onChange={(e) => {
+                  setUsername(e.target.value);
+                  loadSuggestions(e.target.value);
+                }}
+                onFocus={() => loadSuggestions(username)}
+                onBlur={() => setStatusUser(username)}
+              />
+              <Input
+                type="password"
+                placeholder="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                disabled={authMode !== "password"}
+              />
+            </div>
+            <div className="flex flex-wrap items-center gap-3 justify-center">
+              {nextActions.map((action) => (
+                <Button
+                  key={action.type}
+                  className={cn(
+                    "gap-3 text-lg px-8 py-6",
+                    !action.enabled && "opacity-60 cursor-not-allowed"
+                  )}
+                  disabled={!!punching || !action.enabled}
+                  onClick={() => punch(action.type)}
+                  size="lg"
+                >
+                  {action.icon}
+                  {punching === action.type ? "Working..." : action.label}
+                </Button>
+              ))}
+                <Button
+                  variant="ghost"
+                  size="lg"
+                  className="gap-2 px-6 py-6"
+                  onClick={() => username && loadStatus(username)}
+                  aria-label="Reload"
+                >
+                  <RefreshCcw className="h-5 w-5" /> Refresh
+                </Button>
+                <Input
+                  type="date"
+                  className="w-40"
+                  value={selectedDate}
+                  onChange={(e) => {
+                    setSelectedDate(e.target.value);
+                    if (username) loadStatus(username);
+                  }}
+                />
+            </div>
+            {error && <p className="text-sm text-destructive">{error}</p>}
+            {info && <p className="text-sm text-green-600">{info}</p>}
+            {suggestions.length > 0 && (
+              <div className="rounded-lg border p-2 space-y-1 bg-muted/30">
+                <p className="text-xs text-muted-foreground">Select user</p>
+                {suggestions.map((s) => (
+                  <button
+                    key={s.username}
+                    className="w-full text-left rounded-md px-2 py-1 hover:bg-muted"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      setUsername(s.username);
+                      setStatusUser(s.username);
+                      setSuggestions([]);
+                    }}
+                  >
+                    <span className="text-sm font-medium">{s.username}</span>{" "}
+                    <span className="text-xs text-muted-foreground">
+                      {s.employee?.firstName} {s.employee?.lastName} ({s.employee?.employeeCode})
+                    </span>
+                  </button>
+                ))}
+                {fetchingSuggestions && (
+                  <p className="text-xs text-muted-foreground">Searching...</p>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {loadingStatus ? (
+          <Card className="shadow-sm">
+            <CardContent className="p-4 text-sm text-muted-foreground">Loading status...</CardContent>
+          </Card>
+        ) : status ? (
+          <Card className="shadow-sm">
+            <CardHeader className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-lg">Status</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  {status.employee.firstName} {status.employee.lastName} ({status.employee.employeeCode})
+                </p>
+              </div>
+              <Badge variant="outline" className="uppercase">
+                {status.user.role}
+              </Badge>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs text-muted-foreground">Expected</p>
+                  <p className="text-sm">
+                    {minutesToTime(status.expected.start)} - {minutesToTime(status.expected.end)}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {status.expected.shiftName || "No shift"} ({status.expected.source})
+                  </p>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs text-muted-foreground">Last punch</p>
+                  <p className="text-sm font-medium">
+                    {status.lastPunch ? status.lastPunch.punchType.replace("_", " ") : "None"}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {status.lastPunch ? formatZonedTime(status.lastPunch.punchTime, { hour12: true, hour: "2-digit", minute: "2-digit" }) : "—"}
+                  </p>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs text-muted-foreground">Breaks</p>
+                  <p className="text-sm">
+                    {status.breakMinutes} mins {status.breakCount ? `(${status.breakCount}x)` : ""}
+                  </p>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-muted-foreground">Today&apos;s punches</p>
+                {status.punches.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No punches yet today.</p>
+                ) : (
+                  <div className="rounded-lg border">
+                    <div className="divide-y">
+                      {status.punches.map((p, idx) => (
+                        <div key={idx} className="flex items-center justify-between px-3 py-2">
+                          <span className="text-sm font-medium">{p.punchType.replace("_", " ")}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {formatZonedTime(p.punchTime, { hour12: true, hour: "2-digit", minute: "2-digit" })}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
+      </div>
+    </div>
+  );
+}

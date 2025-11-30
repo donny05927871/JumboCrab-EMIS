@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { RefreshCcw, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { TZ } from "@/lib/timezone";
 
 type AttendanceRow = {
   id: string;
@@ -33,16 +34,17 @@ type AttendanceRow = {
   } | null;
 };
 
-const todayISO = () => {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d.toISOString().slice(0, 10);
-};
+const todayISO = () => new Date().toLocaleDateString("en-CA", { timeZone: TZ });
 
 const formatTime = (value?: string | null) => {
   if (!value) return "—";
   const d = new Date(value);
-  return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: true });
+  return d.toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: TZ,
+  });
 };
 
 const formatMinutesToTime = (minutes: number | null | undefined, asClock = true) => {

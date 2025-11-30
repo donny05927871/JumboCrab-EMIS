@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { RefreshCcw, RotateCcw, Clock4 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { TZ } from "@/lib/timezone";
 
 type AttendanceRow = {
   id: string;
@@ -51,13 +52,23 @@ const formatMinutesToTime = (minutes: number | null | undefined, asClock = true)
 
 const formatDate = (value: string) => {
   const d = new Date(value);
-  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  return d.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    timeZone: TZ,
+  });
 };
 
 const formatDateTime = (value?: string | null) => {
   if (!value) return "—";
   const d = new Date(value);
-  return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: true });
+  return d.toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: TZ,
+  });
 };
 
 const formatMinutesToClock12 = (minutes: number) => {
@@ -68,17 +79,15 @@ const formatMinutesToClock12 = (minutes: number) => {
   return `${hrs12.toString().padStart(2, "0")}:${pad(mins)} ${ampm}`;
 };
 
-const todayISO = () => {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d.toISOString().slice(0, 10);
-};
+const toTzDate = (date: Date) =>
+  new Date(date).toLocaleDateString("en-CA", { timeZone: TZ });
+
+const todayISO = () => toTzDate(new Date());
 
 const sevenDaysAgoISO = () => {
   const d = new Date();
   d.setDate(d.getDate() - 7);
-  d.setHours(0, 0, 0, 0);
-  return d.toISOString().slice(0, 10);
+  return toTzDate(d);
 };
 
 export function AttendanceHistoryTable() {

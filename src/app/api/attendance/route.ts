@@ -18,12 +18,8 @@ export async function GET(req: Request) {
 
     if (start || end) {
       where.workDate = {};
-      if (start) where.workDate.gte = new Date(start);
-      if (end) {
-        const endDate = new Date(end);
-        endDate.setDate(endDate.getDate() + 1);
-        where.workDate.lt = endDate;
-      }
+      if (start) where.workDate.gte = startOfZonedDay(new Date(start));
+      if (end) where.workDate.lt = endOfZonedDay(new Date(end));
     }
 
     if (employeeId) where.employeeId = employeeId;

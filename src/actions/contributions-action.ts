@@ -103,6 +103,8 @@ export async function listContributionDirectory() {
         currentStatus: {
           notIn: ["INACTIVE", "ENDED"],
         },
+        // Hide archived employees from the directory
+        isArchived: false,
       },
       orderBy: { lastName: "asc" },
       select: {
@@ -110,7 +112,9 @@ export async function listContributionDirectory() {
         employeeCode: true,
         firstName: true,
         lastName: true,
-        department: true,
+        department: {
+          select: { name: true },
+        },
         img: true,
         contribution: true,
         updatedAt: true,
@@ -118,6 +122,10 @@ export async function listContributionDirectory() {
     });
 
     const rows = employees.map((emp) => {
+      const departmentName =
+        typeof emp.department === "object" && emp.department
+          ? emp.department.name || ""
+          : "";
       const fullName = [emp.firstName, emp.lastName].filter(Boolean).join(" ");
       const c = emp.contribution;
       const num = (val: any) => (val === null || typeof val === "undefined" ? 0 : Number(val));
@@ -134,7 +142,7 @@ export async function listContributionDirectory() {
         employeeId: emp.employeeId,
         employeeCode: emp.employeeCode,
         employeeName: fullName || "Unnamed Employee",
-        department: emp.department,
+        department: departmentName,
         avatarUrl: emp.img,
         updatedAt: c?.updatedAt?.toISOString() ?? emp.updatedAt.toISOString(),
         contribution: c

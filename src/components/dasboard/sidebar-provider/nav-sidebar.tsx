@@ -216,15 +216,13 @@ const NavSidebar = ({ userRole }: NavSidebarProps) => {
           ],
         },
         {
-          label: "Shift Schedule",
-          path: "/schedule",
+          label: "Overrides",
+          path: "/overrides",
           roles: [
             "admin",
             "generalManager",
             "manager",
             "supervisor",
-            "clerk",
-            "employee",
           ],
         },
         {
@@ -234,6 +232,17 @@ const NavSidebar = ({ userRole }: NavSidebarProps) => {
             "admin",
             "generalManager",
             "manager",
+            "supervisor",
+          ],
+        },
+        {
+          label: "Weekly Patterns",
+          path: "/patterns",
+          roles: [
+            "admin",
+            "generalManager",
+            "manager",
+            "supervisor",
           ],
         },
         {
@@ -303,11 +312,6 @@ const NavSidebar = ({ userRole }: NavSidebarProps) => {
         {
           label: "Contributions Directory",
           path: "",
-          roles: ["admin", "generalManager", "clerk"],
-        },
-        {
-          label: "Set Contribution",
-          path: "/set-contribution",
           roles: ["admin", "generalManager", "clerk"],
         },
         {

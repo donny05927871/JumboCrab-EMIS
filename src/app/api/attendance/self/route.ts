@@ -113,9 +113,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
 
+    const hdr = await headers();
     const clientIp =
-      headers().get("x-forwarded-for")?.split(",")[0].trim() ||
-      headers().get("x-real-ip") ||
+      hdr.get("x-forwarded-for")?.split(",")[0].trim() ||
+      hdr.get("x-real-ip") ||
       null;
     if (!isIpAllowed(clientIp)) {
       return NextResponse.json({ success: false, error: "Punching not allowed from this device" }, { status: 403 });

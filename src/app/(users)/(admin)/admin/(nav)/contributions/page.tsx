@@ -3,7 +3,10 @@
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ContributionsProvider, useContributions } from "@/components/dasboard/manage-contributions/contributions-provider";
+import {
+  ContributionsProvider,
+  useContributions,
+} from "@/components/dasboard/manage-contributions/contributions-provider";
 import { ContributionsTable } from "@/components/dasboard/manage-contributions/contributions-table";
 
 function ContributionsContent() {

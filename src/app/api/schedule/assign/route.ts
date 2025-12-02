@@ -38,11 +38,24 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: "Pattern not found" }, { status: 404 });
     }
 
+    // Overwrite any assignment on the same day (allow future scheduling and reassign on same date)
+    const dayStart = new Date(effectiveDate);
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(dayStart);
+    dayEnd.setDate(dayStart.getDate() + 1);
+
+    await db.employeePatternAssignment.deleteMany({
+      where: {
+        employeeId,
+        effectiveDate: { gte: dayStart, lt: dayEnd },
+      },
+    });
+
     const assignment = await db.employeePatternAssignment.create({
       data: {
         employeeId,
         patternId,
-        effectiveDate,
+        effectiveDate: dayStart,
       },
     });
 

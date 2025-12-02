@@ -44,9 +44,12 @@ type StatusPayload = {
 
 const minutesToTime = (mins: number | null) => {
   if (mins == null) return "—";
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`;
+  const total = ((mins % (24 * 60)) + 24 * 60) % (24 * 60);
+  const h24 = Math.floor(total / 60);
+  const m = total % 60;
+  const suffix = h24 >= 12 ? "PM" : "AM";
+  const h12 = h24 % 12 || 12;
+  return `${h12}:${m.toString().padStart(2, "0")} ${suffix}`;
 };
 
 const actionsOrder = ["CLOCK_IN", "BREAK_OUT", "BREAK_IN", "CLOCK_OUT"] as const;
@@ -340,10 +343,12 @@ const nextActions = useMemo(() => {
                 <div className="rounded-lg border p-3">
                   <p className="text-xs text-muted-foreground">Expected</p>
                   <p className="text-sm">
-                    {minutesToTime(status.expected.start)} - {minutesToTime(status.expected.end)}
+                    {status.expected.start != null && status.expected.end != null
+                      ? `${minutesToTime(status.expected.start)} - ${minutesToTime(status.expected.end)}`
+                      : "No schedule"}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    {status.expected.shiftName || "No shift"} ({status.expected.source})
+                    {status.expected.shiftName || "Day off"} ({status.expected.source || "none"})
                   </p>
                 </div>
                 <div className="rounded-lg border p-3">

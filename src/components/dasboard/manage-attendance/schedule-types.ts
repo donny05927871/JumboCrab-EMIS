@@ -17,6 +17,8 @@ export type ShiftLite = {
   startMinutes: number;
   endMinutes: number;
   spansMidnight?: boolean;
+  breakStartMinutes?: number | null;
+  breakEndMinutes?: number | null;
   breakMinutesUnpaid?: number | null;
   paidHoursPerDay?: number | null;
   notes?: string | null;
@@ -104,6 +106,9 @@ export const normalizeShift = (s: any): ShiftLite => ({
   startMinutes: s.startMinutes,
   endMinutes: s.endMinutes,
   spansMidnight: Boolean(s.spansMidnight),
+  breakStartMinutes:
+    typeof s.breakStartMinutes === "number" ? s.breakStartMinutes : null,
+  breakEndMinutes: typeof s.breakEndMinutes === "number" ? s.breakEndMinutes : null,
   breakMinutesUnpaid:
     typeof s.breakMinutesUnpaid === "number" ? s.breakMinutesUnpaid : 0,
   paidHoursPerDay:

@@ -10,6 +10,34 @@ const parseTimeToMinutes = (value: string | null | undefined) => {
   return h * 60 + m;
 };
 
+const computeBreakAndPaid = (
+  startMinutes: number,
+  endMinutes: number,
+  spansMidnight: boolean,
+  breakStartMinutes: number | null,
+  breakEndMinutes: number | null
+) => {
+  let totalMinutes =
+    spansMidnight && endMinutes <= startMinutes
+      ? endMinutes + 24 * 60 - startMinutes
+      : endMinutes - startMinutes;
+  if (totalMinutes < 0) totalMinutes = 0;
+
+  let breakMinutes = 0;
+  if (breakStartMinutes != null && breakEndMinutes != null) {
+    let endVal = breakEndMinutes;
+    if (spansMidnight && breakEndMinutes <= breakStartMinutes) {
+      endVal += 24 * 60;
+    }
+    breakMinutes = Math.max(0, Math.min(totalMinutes, endVal - breakStartMinutes));
+  }
+
+  const paidHours =
+    totalMinutes > 0 ? Number(((totalMinutes - breakMinutes) / 60).toFixed(2)) : 0;
+
+  return { breakMinutes, paidHours, totalMinutes };
+};
+
 export async function GET() {
   try {
     const shifts = await db.shift.findMany({ orderBy: { name: "asc" } });
@@ -28,14 +56,8 @@ export async function POST(req: Request) {
     const startMinutes = parseTimeToMinutes(body?.startTime);
     const endMinutes = parseTimeToMinutes(body?.endTime);
     const spansMidnight = Boolean(body?.spansMidnight);
-    const breakMinutesUnpaid =
-      typeof body?.breakMinutesUnpaid === "number" && body.breakMinutesUnpaid >= 0
-        ? Math.floor(body.breakMinutesUnpaid)
-        : 0;
-    const paidHoursPerDay =
-      typeof body?.paidHoursPerDay === "number" && body.paidHoursPerDay >= 0
-        ? new Prisma.Decimal(body.paidHoursPerDay.toFixed(2))
-        : null;
+    const breakStartMinutes = parseTimeToMinutes(body?.breakStartTime);
+    const breakEndMinutes = parseTimeToMinutes(body?.breakEndTime);
     const notes = typeof body?.notes === "string" ? body.notes.trim() : null;
 
     if (!code || !name) {
@@ -57,6 +79,14 @@ export async function POST(req: Request) {
       );
     }
 
+    const derived = computeBreakAndPaid(
+      startMinutes,
+      endMinutes,
+      spansMidnight,
+      breakStartMinutes,
+      breakEndMinutes
+    );
+
     const shift = await db.shift.create({
       data: {
         code,
@@ -64,8 +94,10 @@ export async function POST(req: Request) {
         startMinutes,
         endMinutes,
         spansMidnight,
-        breakMinutesUnpaid,
-        paidHoursPerDay: paidHoursPerDay ?? new Prisma.Decimal(0),
+        breakStartMinutes,
+        breakEndMinutes,
+        breakMinutesUnpaid: derived.breakMinutes,
+        paidHoursPerDay: new Prisma.Decimal(derived.paidHours.toFixed(2)),
         notes,
       },
     });
@@ -111,14 +143,12 @@ export async function PATCH(req: Request) {
       typeof body?.spansMidnight === "boolean"
         ? body.spansMidnight
         : existing.spansMidnight;
-    const breakMinutesUnpaid =
-      typeof body?.breakMinutesUnpaid === "number" && body.breakMinutesUnpaid >= 0
-        ? Math.floor(body.breakMinutesUnpaid)
-        : existing.breakMinutesUnpaid;
-    const paidHoursPerDay =
-      typeof body?.paidHoursPerDay === "number" && body.paidHoursPerDay >= 0
-        ? new Prisma.Decimal(body.paidHoursPerDay.toFixed(2))
-        : existing.paidHoursPerDay;
+    const breakStartMinutes = body?.breakStartTime
+      ? parseTimeToMinutes(body.breakStartTime)
+      : existing.breakStartMinutes;
+    const breakEndMinutes = body?.breakEndTime
+      ? parseTimeToMinutes(body.breakEndTime)
+      : existing.breakEndMinutes;
     const notes =
       typeof body?.notes === "string"
         ? body.notes.trim()
@@ -143,6 +173,14 @@ export async function PATCH(req: Request) {
       );
     }
 
+    const derived = computeBreakAndPaid(
+      startMinutes,
+      endMinutes,
+      spansMidnight,
+      breakStartMinutes,
+      breakEndMinutes
+    );
+
     const shift = await db.shift.update({
       where: { id },
       data: {
@@ -151,8 +189,10 @@ export async function PATCH(req: Request) {
         startMinutes,
         endMinutes,
         spansMidnight,
-        breakMinutesUnpaid,
-        paidHoursPerDay: paidHoursPerDay ?? new Prisma.Decimal(0),
+        breakStartMinutes,
+        breakEndMinutes,
+        breakMinutesUnpaid: derived.breakMinutes,
+        paidHoursPerDay: new Prisma.Decimal(derived.paidHours.toFixed(2)),
         notes,
       },
     });

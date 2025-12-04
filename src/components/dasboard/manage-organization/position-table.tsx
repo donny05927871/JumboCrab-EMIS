@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Pencil, Plus, RefreshCcw } from "lucide-react";
+import { Pencil, Plus, RefreshCcw, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
   Dialog,
@@ -37,6 +37,7 @@ export function PositionTable() {
   const [departmentId, setDepartmentId] = useState("");
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const load = async () => {
     try {
@@ -133,6 +134,25 @@ export function PositionTable() {
       setFormError(null);
     }
     setOpen(val);
+  };
+
+  const handleDelete = async (id: string) => {
+    const confirmed = window.confirm("Delete this position? It will no longer appear in lists.");
+    if (!confirmed) return;
+    try {
+      setDeletingId(id);
+      setError(null);
+      const res = await fetch(`/api/positions?id=${id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to delete position");
+      }
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete position");
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   return (
@@ -258,16 +278,29 @@ export function PositionTable() {
                       {pos.description || "—"}
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        type="button"
-                        className="gap-1"
-                        onClick={() => startEdit(pos)}
-                      >
-                        <Pencil className="h-4 w-4" />
-                        Edit
-                      </Button>
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          type="button"
+                          className="gap-1"
+                          onClick={() => startEdit(pos)}
+                        >
+                          <Pencil className="h-4 w-4" />
+                          Edit
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          type="button"
+                          className="gap-1 text-destructive"
+                          onClick={() => handleDelete(pos.positionId)}
+                          disabled={deletingId === pos.positionId}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          {deletingId === pos.positionId ? "Deleting..." : "Delete"}
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}

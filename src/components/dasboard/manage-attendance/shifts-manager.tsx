@@ -22,6 +22,8 @@ type ShiftRow = {
   startMinutes: number;
   endMinutes: number;
   spansMidnight: boolean;
+  breakStartMinutes?: number | null;
+  breakEndMinutes?: number | null;
   breakMinutesUnpaid: number;
   paidHoursPerDay: string;
   notes?: string | null;
@@ -36,6 +38,55 @@ const minutesToTime = (minutes: number) => {
   return `${h12}:${m.toString().padStart(2, "0")} ${suffix}`;
 };
 
+const minutesToInput = (minutes: number | null | undefined) => {
+  if (minutes == null) return "";
+  const total = ((minutes % (24 * 60)) + 24 * 60) % (24 * 60);
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`;
+};
+
+const inputToMinutes = (value?: string | null) => {
+  if (!value) return null;
+  const [h, m] = value.split(":").map((v) => Number(v));
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+  if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+  return h * 60 + m;
+};
+
+const computeDerived = (
+  startTime: string,
+  endTime: string,
+  spansMidnight: boolean,
+  breakStartTime?: string,
+  breakEndTime?: string
+) => {
+  const start = inputToMinutes(startTime);
+  const end = inputToMinutes(endTime);
+  if (start == null || end == null) return { breakMinutes: 0, paidHours: 0, totalMinutes: 0 };
+
+  let totalMinutes =
+    spansMidnight && end <= start ? end + 24 * 60 - start : end - start;
+  if (totalMinutes < 0) totalMinutes = 0;
+
+  const bStart = inputToMinutes(breakStartTime);
+  const bEnd = inputToMinutes(breakEndTime);
+  let breakMinutes = 0;
+  if (bStart != null && bEnd != null) {
+    let endVal = bEnd;
+    if (spansMidnight && bEnd <= bStart) {
+      endVal += 24 * 60;
+    }
+    breakMinutes = Math.max(0, Math.min(totalMinutes, endVal - bStart));
+  }
+
+  const paidHours = totalMinutes > 0
+    ? Number(((totalMinutes - breakMinutes) / 60).toFixed(2))
+    : 0;
+
+  return { breakMinutes, paidHours, totalMinutes };
+};
+
 export function ShiftsManager() {
   const [rows, setRows] = useState<ShiftRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,9 +96,9 @@ export function ShiftsManager() {
   const [name, setName] = useState("");
   const [startTime, setStartTime] = useState("09:00");
   const [endTime, setEndTime] = useState("18:00");
+  const [breakStartTime, setBreakStartTime] = useState("");
+  const [breakEndTime, setBreakEndTime] = useState("");
   const [spansMidnight, setSpansMidnight] = useState(false);
-  const [breakMinutesUnpaid, setBreakMinutesUnpaid] = useState(60);
-  const [paidHoursPerDay, setPaidHoursPerDay] = useState(8);
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -60,11 +111,26 @@ export function ShiftsManager() {
     name: "",
     startTime: "09:00",
     endTime: "18:00",
+    breakStartTime: "",
+    breakEndTime: "",
     spansMidnight: false,
-    breakMinutesUnpaid: 0,
-    paidHoursPerDay: 0,
     notes: "",
   });
+
+  const derivedCreate = computeDerived(
+    startTime,
+    endTime,
+    spansMidnight,
+    breakStartTime,
+    breakEndTime
+  );
+  const derivedEdit = computeDerived(
+    editForm.startTime,
+    editForm.endTime,
+    editForm.spansMidnight,
+    editForm.breakStartTime,
+    editForm.breakEndTime
+  );
 
   const load = async () => {
     try {
@@ -90,9 +156,9 @@ export function ShiftsManager() {
     setName("");
     setStartTime("09:00");
     setEndTime("18:00");
+    setBreakStartTime("");
+    setBreakEndTime("");
     setSpansMidnight(false);
-    setBreakMinutesUnpaid(60);
-    setPaidHoursPerDay(8);
     setNotes("");
     setFormError(null);
   };
@@ -102,6 +168,7 @@ export function ShiftsManager() {
       setFormError("Code and name are required");
       return;
     }
+    const { breakMinutes, paidHours } = derivedCreate;
     try {
       setSaving(true);
       setFormError(null);
@@ -110,9 +177,11 @@ export function ShiftsManager() {
         name,
         startTime,
         endTime,
+        breakStartTime,
+        breakEndTime,
         spansMidnight,
-        breakMinutesUnpaid,
-        paidHoursPerDay,
+        breakMinutesUnpaid: breakMinutes,
+        paidHoursPerDay: paidHours,
         notes,
       };
       const res = await fetch("/api/shifts", {
@@ -136,11 +205,11 @@ export function ShiftsManager() {
     setEditForm({
       code: row.code,
       name: row.name,
-      startTime: minutesToTime(row.startMinutes),
-      endTime: minutesToTime(row.endMinutes),
+      startTime: minutesToInput(row.startMinutes),
+      endTime: minutesToInput(row.endMinutes),
+      breakStartTime: minutesToInput(row.breakStartMinutes ?? null),
+      breakEndTime: minutesToInput(row.breakEndMinutes ?? null),
       spansMidnight: row.spansMidnight,
-      breakMinutesUnpaid: row.breakMinutesUnpaid,
-      paidHoursPerDay: Number(row.paidHoursPerDay),
       notes: row.notes || "",
     });
     setEditError(null);
@@ -154,9 +223,9 @@ export function ShiftsManager() {
       name: "",
       startTime: "09:00",
       endTime: "18:00",
+      breakStartTime: "",
+      breakEndTime: "",
       spansMidnight: false,
-      breakMinutesUnpaid: 0,
-      paidHoursPerDay: 0,
       notes: "",
     });
     setEditError(null);
@@ -172,13 +241,25 @@ export function ShiftsManager() {
       setEditError("Code and name are required");
       return;
     }
+    const derived = computeDerived(
+      editForm.startTime,
+      editForm.endTime,
+      editForm.spansMidnight,
+      editForm.breakStartTime,
+      editForm.breakEndTime
+    );
     try {
       setEditSaving(true);
       setEditError(null);
       const res = await fetch("/api/shifts", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: editingId, ...editForm }),
+        body: JSON.stringify({
+          id: editingId,
+          ...editForm,
+          breakMinutesUnpaid: derived.breakMinutes,
+          paidHoursPerDay: derived.paidHours,
+        }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error || "Failed to update shift");
@@ -224,7 +305,7 @@ export function ShiftsManager() {
                       <TableHead className="w-[14%]">Code</TableHead>
                       <TableHead className="w-[20%]">Name</TableHead>
                       <TableHead className="w-[20%]">Time</TableHead>
-                      <TableHead className="w-[12%]">Break</TableHead>
+                      <TableHead className="w-[18%]">Break window</TableHead>
                       <TableHead className="w-[12%]">Paid hours</TableHead>
                       <TableHead className="w-[18%]">Notes</TableHead>
                       <TableHead className="w-[14%] text-right">Actions</TableHead>
@@ -240,7 +321,18 @@ export function ShiftsManager() {
                           {row.spansMidnight && <Badge variant="outline" className="ml-2">Next day</Badge>}
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
-                          {row.breakMinutesUnpaid} mins
+                          {row.breakStartMinutes != null && row.breakEndMinutes != null ? (
+                            <div className="space-y-0.5">
+                              <div>
+                                {minutesToTime(row.breakStartMinutes)} – {minutesToTime(row.breakEndMinutes)}
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                Unpaid {row.breakMinutesUnpaid} mins
+                              </div>
+                            </div>
+                          ) : (
+                            `${row.breakMinutesUnpaid} mins`
+                          )}
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
                           {row.paidHoursPerDay} hrs
@@ -301,23 +393,30 @@ export function ShiftsManager() {
               <Input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Unpaid break (minutes)</label>
+              <label className="text-sm font-medium">Break start</label>
               <Input
-                type="number"
-                min={0}
-                value={breakMinutesUnpaid}
-                onChange={(e) => setBreakMinutesUnpaid(Number(e.target.value))}
+                type="time"
+                value={breakStartTime}
+                onChange={(e) => setBreakStartTime(e.target.value)}
+                placeholder="14:00"
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Paid hours per day</label>
+              <label className="text-sm font-medium">Break end</label>
               <Input
-                type="number"
-                min={0}
-                step="0.25"
-                value={paidHoursPerDay}
-                onChange={(e) => setPaidHoursPerDay(Number(e.target.value))}
+                type="time"
+                value={breakEndTime}
+                onChange={(e) => setBreakEndTime(e.target.value)}
+                placeholder="15:00"
               />
+            </div>
+            <div className="space-y-2 sm:col-span-2">
+              <div className="text-sm text-muted-foreground">
+                Unpaid break: <span className="font-medium text-foreground">{derivedCreate.breakMinutes} mins</span>{" "}
+                • Paid hours per day:{" "}
+                <span className="font-medium text-foreground">{derivedCreate.paidHours}</span>{" "}
+                (auto-calculated)
+              </div>
             </div>
             <div className="space-y-2 sm:col-span-2">
               <label className="text-sm font-medium">Notes</label>
@@ -394,23 +493,30 @@ export function ShiftsManager() {
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Unpaid break (minutes)</label>
+              <label className="text-sm font-medium">Break start</label>
               <Input
-                type="number"
-                min={0}
-                value={editForm.breakMinutesUnpaid}
-                onChange={(e) => setEditForm((f) => ({ ...f, breakMinutesUnpaid: Number(e.target.value) }))}
+                type="time"
+                value={editForm.breakStartTime}
+                onChange={(e) => setEditForm((f) => ({ ...f, breakStartTime: e.target.value }))}
+                placeholder="14:00"
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Paid hours per day</label>
+              <label className="text-sm font-medium">Break end</label>
               <Input
-                type="number"
-                min={0}
-                step="0.25"
-                value={editForm.paidHoursPerDay}
-                onChange={(e) => setEditForm((f) => ({ ...f, paidHoursPerDay: Number(e.target.value) }))}
+                type="time"
+                value={editForm.breakEndTime}
+                onChange={(e) => setEditForm((f) => ({ ...f, breakEndTime: e.target.value }))}
+                placeholder="15:00"
               />
+            </div>
+            <div className="space-y-2 sm:col-span-2">
+              <div className="text-sm text-muted-foreground">
+                Unpaid break: <span className="font-medium text-foreground">{derivedEdit.breakMinutes} mins</span>{" "}
+                • Paid hours per day:{" "}
+                <span className="font-medium text-foreground">{derivedEdit.paidHours}</span>{" "}
+                (auto-calculated)
+              </div>
             </div>
             <div className="space-y-2 sm:col-span-2">
               <label className="text-sm font-medium">Notes</label>

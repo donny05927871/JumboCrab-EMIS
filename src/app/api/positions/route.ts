@@ -187,3 +187,44 @@ export async function PUT(req: Request) {
     );
   }
 }
+
+export async function DELETE(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id")?.trim() ?? "";
+    if (!id) {
+      return NextResponse.json(
+        { success: false, error: "Position ID is required" },
+        { status: 400 }
+      );
+    }
+
+    const existing = await db.position.findUnique({
+      where: { positionId: id },
+      select: { positionId: true, name: true },
+    });
+    if (!existing) {
+      return NextResponse.json(
+        { success: false, error: "Position not found" },
+        { status: 404 }
+      );
+    }
+
+    await db.position.update({
+      where: { positionId: id },
+      data: {
+        isActive: false,
+        // keep uniqueness free by suffixing the name on soft delete
+        name: `${existing.name}__deleted__${existing.positionId}`,
+      },
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Failed to delete position", error);
+    return NextResponse.json(
+      { success: false, error: "Failed to delete position" },
+      { status: 500 }
+    );
+  }
+}

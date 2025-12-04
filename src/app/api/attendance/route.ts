@@ -61,12 +61,14 @@ export async function GET(req: Request) {
         let breakMinutes = 0;
         let breakStart: Date | null = null;
         punches.forEach((p) => {
-          if (p.punchType === "BREAK_OUT") {
-            breakStart = p.punchTime;
-          } else if (p.punchType === "BREAK_IN" && breakStart) {
-            breakCount += 1;
-            breakMinutes += Math.max(0, Math.round((p.punchTime.getTime() - breakStart.getTime()) / 60000));
-            breakStart = null;
+          if (p.punchType === "BREAK_OUT" || p.punchType === "BREAK_IN") {
+            if (!breakStart) {
+              breakStart = p.punchTime;
+            } else {
+              breakCount += 1;
+              breakMinutes += Math.max(0, Math.round((p.punchTime.getTime() - breakStart.getTime()) / 60000));
+              breakStart = null;
+            }
           }
         });
 
@@ -102,6 +104,7 @@ export async function GET(req: Request) {
           expectedShiftName: expected.shift?.name ?? r.expectedShift?.name ?? null,
           scheduledStartMinutes: expectedStart,
           scheduledEndMinutes: expectedEnd,
+          punchesCount: punches.length,
           breakCount,
           breakMinutes,
           lateMinutes,
@@ -202,6 +205,7 @@ export async function GET(req: Request) {
           lateMinutes: null,
           undertimeMinutes: null,
           overtimeMinutesRaw: null,
+          punchesCount: 0,
           breakCount: breaks.count,
           breakMinutes: breaks.minutes,
           employeeId: emp.employeeId,

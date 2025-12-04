@@ -13,14 +13,51 @@ import {
 import { ShiftLite, formatMinutes } from "./schedule-types";
 import { Check, Pencil, Plus, RefreshCcw, Trash2, X } from "lucide-react";
 
+const parseTimeToMinutes = (value?: string | null) => {
+  if (!value) return null;
+  const [h, m] = value.split(":").map((v) => Number(v));
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+  if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+  return h * 60 + m;
+};
+
+const deriveShiftCalcs = (
+  startTime?: string,
+  endTime?: string,
+  spansMidnight?: boolean,
+  breakStartTime?: string,
+  breakEndTime?: string
+) => {
+  const start = parseTimeToMinutes(startTime);
+  const end = parseTimeToMinutes(endTime);
+  if (start == null || end == null) return { breakMinutes: 0, paidHours: 0, totalMinutes: 0 };
+  let totalMinutes =
+    spansMidnight && end <= start ? end + 24 * 60 - start : end - start;
+  if (totalMinutes < 0) totalMinutes = 0;
+
+  const bStart = parseTimeToMinutes(breakStartTime);
+  const bEnd = parseTimeToMinutes(breakEndTime);
+  let breakMinutes = 0;
+  if (bStart != null && bEnd != null) {
+    let endVal = bEnd;
+    if (spansMidnight && bEnd <= bStart) {
+      endVal += 24 * 60;
+    }
+    breakMinutes = Math.max(0, Math.min(totalMinutes, endVal - bStart));
+  }
+  const paidHours =
+    totalMinutes > 0 ? Number(((totalMinutes - breakMinutes) / 60).toFixed(2)) : 0;
+  return { breakMinutes, paidHours, totalMinutes };
+};
+
 export type ShiftEditState = {
   code: string;
   name: string;
   startTime: string;
   endTime: string;
   spansMidnight: boolean;
-  breakMinutesUnpaid: number;
-  paidHoursPerDay: number;
+  breakStartTime?: string;
+  breakEndTime?: string;
   notes: string;
 };
 
@@ -36,8 +73,8 @@ type ShiftsSectionProps = {
   shiftStart: string;
   shiftEnd: string;
   shiftSpansMidnight: boolean;
-  shiftBreak: number;
-  shiftPaidHours: number;
+  shiftBreakStart?: string;
+  shiftBreakEnd?: string;
   shiftNotes: string;
   shiftSaving: boolean;
   shiftError: string | null;
@@ -63,8 +100,8 @@ export function ShiftsSection({
   shiftStart,
   shiftEnd,
   shiftSpansMidnight,
-  shiftBreak,
-  shiftPaidHours,
+  shiftBreakStart,
+  shiftBreakEnd,
   shiftNotes,
   shiftSaving,
   shiftError,
@@ -78,6 +115,14 @@ export function ShiftsSection({
   onChangeField,
 }: ShiftsSectionProps) {
   if (!showShifts) return null;
+
+  const derivedCreate = deriveShiftCalcs(
+    shiftStart,
+    shiftEnd,
+    shiftSpansMidnight,
+    shiftBreakStart,
+    shiftBreakEnd
+  );
 
   return (
     <>
@@ -101,18 +146,29 @@ export function ShiftsSection({
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Code</TableHead>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Time</TableHead>
-                    <TableHead>Break (min)</TableHead>
-                    <TableHead>Paid hrs</TableHead>
-                    <TableHead>Spans midnight</TableHead>
+                  <TableHead>Code</TableHead>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Time</TableHead>
+                  <TableHead>Break window</TableHead>
+                  <TableHead>Break (min)</TableHead>
+                  <TableHead>Paid hrs</TableHead>
+                  <TableHead>Spans midnight</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {shifts.map((shift) => {
                     const isEditing = shiftEditId === shift.id;
+                    const derivedRow =
+                      isEditing && shiftEdit
+                        ? deriveShiftCalcs(
+                            shiftEdit.startTime,
+                            shiftEdit.endTime,
+                            shiftEdit.spansMidnight,
+                            shiftEdit.breakStartTime,
+                            shiftEdit.breakEndTime
+                          )
+                        : null;
                     return (
                       <TableRow key={shift.id}>
                         <TableCell className="text-sm">
@@ -173,42 +229,47 @@ export function ShiftsSection({
                             )}`
                           )}
                         </TableCell>
-                        <TableCell className="text-sm">
+                        <TableCell className="text-sm text-muted-foreground">
                           {isEditing ? (
-                            <Input
-                              type="number"
-                              min={0}
-                              value={shiftEdit?.breakMinutesUnpaid ?? 0}
-                              onChange={(e) =>
-                                shiftEdit &&
-                                onChangeEdit({
-                                  ...shiftEdit,
-                                  breakMinutesUnpaid: Number(e.target.value),
-                                })
-                              }
-                            />
+                            <div className="flex gap-2">
+                              <Input
+                                type="time"
+                                value={shiftEdit?.breakStartTime ?? ""}
+                                onChange={(e) =>
+                                  shiftEdit &&
+                                  onChangeEdit({
+                                    ...shiftEdit,
+                                    breakStartTime: e.target.value,
+                                  })
+                                }
+                              />
+                              <Input
+                                type="time"
+                                value={shiftEdit?.breakEndTime ?? ""}
+                                onChange={(e) =>
+                                  shiftEdit &&
+                                  onChangeEdit({
+                                    ...shiftEdit,
+                                    breakEndTime: e.target.value,
+                                  })
+                                }
+                              />
+                            </div>
+                          ) : shift.breakStartMinutes != null && shift.breakEndMinutes != null ? (
+                            `${formatMinutes(shift.breakStartMinutes)} - ${formatMinutes(shift.breakEndMinutes)}`
                           ) : (
-                            shift.breakMinutesUnpaid ?? 0
+                            "—"
                           )}
                         </TableCell>
                         <TableCell className="text-sm">
-                          {isEditing ? (
-                            <Input
-                              type="number"
-                              step="0.25"
-                              min={0}
-                              value={shiftEdit?.paidHoursPerDay ?? 0}
-                              onChange={(e) =>
-                                shiftEdit &&
-                                onChangeEdit({
-                                  ...shiftEdit,
-                                  paidHoursPerDay: Number(e.target.value),
-                                })
-                              }
-                            />
-                          ) : (
-                            shift.paidHoursPerDay ?? 0
-                          )}
+                          {isEditing
+                            ? derivedRow?.breakMinutes ?? 0
+                            : shift.breakMinutesUnpaid ?? 0}
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {isEditing
+                            ? derivedRow?.paidHours ?? 0
+                            : shift.paidHoursPerDay ?? 0}
                         </TableCell>
                         <TableCell>
                           {isEditing ? (
@@ -334,29 +395,33 @@ export function ShiftsSection({
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">
-                Unpaid break (minutes)
-              </label>
+              <label className="text-sm font-medium">Break start</label>
               <Input
-                type="number"
-                min={0}
-                value={shiftBreak}
-                onChange={(e) =>
-                  onChangeField("break", Number(e.target.value))
-                }
+                type="time"
+                value={shiftBreakStart ?? ""}
+                onChange={(e) => onChangeField("breakStart", e.target.value)}
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Paid hours per day</label>
+              <label className="text-sm font-medium">Break end</label>
               <Input
-                type="number"
-                min={0}
-                step="0.25"
-                value={shiftPaidHours}
-                onChange={(e) =>
-                  onChangeField("paidHours", Number(e.target.value))
-                }
+                type="time"
+                value={shiftBreakEnd ?? ""}
+                onChange={(e) => onChangeField("breakEnd", e.target.value)}
               />
+            </div>
+            <div className="space-y-2 sm:col-span-2">
+              <div className="text-sm text-muted-foreground">
+                Unpaid break:{" "}
+                <span className="font-medium text-foreground">
+                  {derivedCreate.breakMinutes} mins
+                </span>{" "}
+                • Paid hours per day:{" "}
+                <span className="font-medium text-foreground">
+                  {derivedCreate.paidHours}
+                </span>{" "}
+                (auto-calculated)
+              </div>
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Spans midnight</label>

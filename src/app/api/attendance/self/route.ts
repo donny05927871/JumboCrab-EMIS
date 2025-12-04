@@ -70,12 +70,14 @@ export async function GET(req: Request) {
     let breakMinutes = 0;
     let breakStart: Date | null = null;
     punches.forEach((p) => {
-      if (p.punchType === "BREAK_OUT") {
-        breakStart = p.punchTime;
-      } else if (p.punchType === "BREAK_IN" && breakStart) {
-        breakCount += 1;
-        breakMinutes += Math.max(0, Math.round((p.punchTime.getTime() - breakStart.getTime()) / 60000));
-        breakStart = null;
+      if (p.punchType === "BREAK_OUT" || p.punchType === "BREAK_IN") {
+        if (!breakStart) {
+          breakStart = p.punchTime;
+        } else {
+          breakCount += 1;
+          breakMinutes += Math.max(0, Math.round((p.punchTime.getTime() - breakStart.getTime()) / 60000));
+          breakStart = null;
+        }
       }
     });
 

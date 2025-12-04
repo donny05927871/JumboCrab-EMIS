@@ -23,6 +23,40 @@ import {
   makeDate,
 } from "./schedule-types";
 
+const parseTimeToMinutes = (value?: string | null) => {
+  if (!value) return null;
+  const [h, m] = value.split(":").map((v) => Number(v));
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+  if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+  return h * 60 + m;
+};
+
+const deriveShiftCalcs = (
+  startTime?: string,
+  endTime?: string,
+  spansMidnight?: boolean,
+  breakStartTime?: string,
+  breakEndTime?: string
+) => {
+  const start = parseTimeToMinutes(startTime);
+  const end = parseTimeToMinutes(endTime);
+  if (start == null || end == null) return { breakMinutes: 0, paidHours: 0, totalMinutes: 0 };
+  let totalMinutes =
+    spansMidnight && end <= start ? end + 24 * 60 - start : end - start;
+  if (totalMinutes < 0) totalMinutes = 0;
+  const bStart = parseTimeToMinutes(breakStartTime);
+  const bEnd = parseTimeToMinutes(breakEndTime);
+  let breakMinutes = 0;
+  if (bStart != null && bEnd != null) {
+    let endVal = bEnd;
+    if (spansMidnight && bEnd <= bStart) endVal += 24 * 60;
+    breakMinutes = Math.max(0, Math.min(totalMinutes, endVal - bStart));
+  }
+  const paidHours =
+    totalMinutes > 0 ? Number(((totalMinutes - breakMinutes) / 60).toFixed(2)) : 0;
+  return { breakMinutes, paidHours, totalMinutes };
+};
+
 type ScheduleBoardProps = {
   mode?: "full" | "overrides" | "patterns";
 };
@@ -63,8 +97,8 @@ export function ScheduleBoard({ mode = "full" }: ScheduleBoardProps) {
   const [shiftStart, setShiftStart] = useState("09:00");
   const [shiftEnd, setShiftEnd] = useState("18:00");
   const [shiftSpansMidnight, setShiftSpansMidnight] = useState(false);
-  const [shiftBreak, setShiftBreak] = useState(60);
-  const [shiftPaidHours, setShiftPaidHours] = useState(8);
+  const [shiftBreakStart, setShiftBreakStart] = useState("");
+  const [shiftBreakEnd, setShiftBreakEnd] = useState("");
   const [shiftNotes, setShiftNotes] = useState("");
   const [shiftSaving, setShiftSaving] = useState(false);
   const [shiftError, setShiftError] = useState<string | null>(null);
@@ -195,8 +229,8 @@ export function ScheduleBoard({ mode = "full" }: ScheduleBoardProps) {
       startTime: minutesToTimeInput(shift.startMinutes),
       endTime: minutesToTimeInput(shift.endMinutes),
       spansMidnight: Boolean(shift.spansMidnight),
-      breakMinutesUnpaid: shift.breakMinutesUnpaid ?? 0,
-      paidHoursPerDay: shift.paidHoursPerDay ?? 0,
+      breakStartTime: shift.breakStartMinutes != null ? minutesToTimeInput(shift.breakStartMinutes) : "",
+      breakEndTime: shift.breakEndMinutes != null ? minutesToTimeInput(shift.breakEndMinutes) : "",
       notes: shift.notes ?? "",
     });
     setShiftEditError(null);
@@ -213,6 +247,13 @@ export function ScheduleBoard({ mode = "full" }: ScheduleBoardProps) {
     try {
       setShiftEditSaving(true);
       setShiftEditError(null);
+      const derived = deriveShiftCalcs(
+        shiftEdit.startTime,
+        shiftEdit.endTime,
+        shiftEdit.spansMidnight,
+        shiftEdit.breakStartTime,
+        shiftEdit.breakEndTime
+      );
       const res = await fetch("/api/shifts", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -223,8 +264,10 @@ export function ScheduleBoard({ mode = "full" }: ScheduleBoardProps) {
           startTime: shiftEdit.startTime,
           endTime: shiftEdit.endTime,
           spansMidnight: shiftEdit.spansMidnight,
-          breakMinutesUnpaid: shiftEdit.breakMinutesUnpaid,
-          paidHoursPerDay: shiftEdit.paidHoursPerDay,
+          breakStartTime: shiftEdit.breakStartTime ?? null,
+          breakEndTime: shiftEdit.breakEndTime ?? null,
+          breakMinutesUnpaid: derived.breakMinutes,
+          paidHoursPerDay: derived.paidHours,
           notes: shiftEdit.notes,
         }),
       });
@@ -479,6 +522,13 @@ export function ScheduleBoard({ mode = "full" }: ScheduleBoardProps) {
     try {
       setShiftSaving(true);
       setShiftError(null);
+      const derived = deriveShiftCalcs(
+        shiftStart,
+        shiftEnd,
+        shiftSpansMidnight,
+        shiftBreakStart,
+        shiftBreakEnd
+      );
       const res = await fetch("/api/shifts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -488,8 +538,10 @@ export function ScheduleBoard({ mode = "full" }: ScheduleBoardProps) {
           startTime: shiftStart,
           endTime: shiftEnd,
           spansMidnight: shiftSpansMidnight,
-          breakMinutesUnpaid: shiftBreak,
-          paidHoursPerDay: shiftPaidHours,
+          breakStartTime: shiftBreakStart || null,
+          breakEndTime: shiftBreakEnd || null,
+          breakMinutesUnpaid: derived.breakMinutes,
+          paidHoursPerDay: derived.paidHours,
           notes: shiftNotes,
         }),
       });
@@ -498,6 +550,8 @@ export function ScheduleBoard({ mode = "full" }: ScheduleBoardProps) {
       setShiftCode("");
       setShiftName("");
       setShiftNotes("");
+      setShiftBreakStart("");
+      setShiftBreakEnd("");
       await load();
     } catch (err) {
       setShiftError(
@@ -577,11 +631,11 @@ export function ScheduleBoard({ mode = "full" }: ScheduleBoardProps) {
       case "end":
         setShiftEnd(String(value));
         break;
-      case "break":
-        setShiftBreak(Number(value));
+      case "breakStart":
+        setShiftBreakStart(String(value));
         break;
-      case "paidHours":
-        setShiftPaidHours(Number(value));
+      case "breakEnd":
+        setShiftBreakEnd(String(value));
         break;
       case "spansMidnight":
         setShiftSpansMidnight(Boolean(value));
@@ -710,8 +764,8 @@ export function ScheduleBoard({ mode = "full" }: ScheduleBoardProps) {
         shiftStart={shiftStart}
         shiftEnd={shiftEnd}
         shiftSpansMidnight={shiftSpansMidnight}
-        shiftBreak={shiftBreak}
-        shiftPaidHours={shiftPaidHours}
+        shiftBreakStart={shiftBreakStart}
+        shiftBreakEnd={shiftBreakEnd}
         shiftNotes={shiftNotes}
         shiftSaving={shiftSaving}
         shiftError={shiftError}

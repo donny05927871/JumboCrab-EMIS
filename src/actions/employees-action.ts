@@ -247,6 +247,7 @@ export async function updateEmployee(
       "lastName",
       "sex",
       "birthdate",
+      "startDate",
       "civilStatus",
       "departmentId",
       "positionId",
@@ -276,6 +277,23 @@ export async function updateEmployee(
     allowedFields.forEach((field) => {
       if (field in data) {
         updateData[field] = data[field];
+      }
+    });
+
+    (["birthdate", "startDate", "endDate"] as const).forEach((field) => {
+      if (field in updateData) {
+        const value = updateData[field];
+        if (value == null || value === "") {
+          updateData[field] = field === "endDate" ? null : undefined;
+          if (updateData[field] === undefined) delete updateData[field];
+          return;
+        }
+        const parsed = value instanceof Date ? value : new Date(value);
+        if (Number.isNaN(parsed.getTime())) {
+          delete updateData[field];
+        } else {
+          updateData[field] = parsed;
+        }
       }
     });
 

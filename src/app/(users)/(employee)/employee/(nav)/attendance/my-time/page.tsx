@@ -78,11 +78,11 @@ export default function MyTimePage() {
     const actions: { type: Punch["punchType"]; label: string; icon: React.ReactNode }[] = [];
     if (!last || last === "CLOCK_OUT") {
       actions.push({ type: "CLOCK_IN", label: "Time in", icon: <LogIn className="h-4 w-4" /> });
-    } else if (last === "CLOCK_IN" || last === "BREAK_IN") {
-      actions.push({ type: "BREAK_OUT", label: "Break out", icon: <Coffee className="h-4 w-4" /> });
+    } else if (last === "CLOCK_IN") {
+      actions.push({ type: "BREAK_IN", label: "Break start", icon: <Coffee className="h-4 w-4" /> });
       actions.push({ type: "CLOCK_OUT", label: "Time out", icon: <LogOut className="h-4 w-4" /> });
-    } else if (last === "BREAK_OUT") {
-      actions.push({ type: "BREAK_IN", label: "Break in", icon: <Clock className="h-4 w-4" /> });
+    } else if (last === "BREAK_IN") {
+      actions.push({ type: "BREAK_OUT", label: "Break end", icon: <Clock className="h-4 w-4" /> });
       actions.push({ type: "CLOCK_OUT", label: "Time out", icon: <LogOut className="h-4 w-4" /> });
     }
     return actions;

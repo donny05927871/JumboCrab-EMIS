@@ -52,7 +52,7 @@ const minutesToTime = (mins: number | null) => {
   return `${h12}:${m.toString().padStart(2, "0")} ${suffix}`;
 };
 
-const actionsOrder = ["CLOCK_IN", "BREAK_OUT", "BREAK_IN", "CLOCK_OUT"] as const;
+const actionsOrder = ["CLOCK_IN", "BREAK_IN", "BREAK_OUT", "CLOCK_OUT"] as const;
 
 export default function KioskClockPage() {
   const [username, setUsername] = useState("");
@@ -142,8 +142,8 @@ const nextActions = useMemo(() => {
     const expected = allowedNext[key as keyof typeof allowedNext];
     const all = [
       { type: "CLOCK_IN", label: "Time in", icon: <LogIn className="h-5 w-5" /> },
-      { type: "BREAK_IN", label: "Break in", icon: <Clock className="h-5 w-5" /> },
-      { type: "BREAK_OUT", label: "Break out", icon: <Coffee className="h-5 w-5" /> },
+      { type: "BREAK_IN", label: "Break start", icon: <Coffee className="h-5 w-5" /> },
+      { type: "BREAK_OUT", label: "Break end", icon: <Clock className="h-5 w-5" /> },
       { type: "CLOCK_OUT", label: "Time out", icon: <LogOut className="h-5 w-5" /> },
     ];
     return all.map((a) => ({ ...a, enabled: a.type === expected }));

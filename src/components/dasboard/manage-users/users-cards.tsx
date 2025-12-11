@@ -22,6 +22,12 @@ const buildDisplayName = (user: UserWithEmployee) => {
   return fullName || user.username;
 };
 
+const getSupervisesLabel = (user: UserWithEmployee) => {
+  if (user.role !== "supervisor") return null;
+  const label = user.employee?.department || user.employee?.position;
+  return label ? `Supervises: ${label}` : null;
+};
+
 const formatJoinedDate = (value?: string | Date | null) => {
   if (!value) return null;
   const date = typeof value === "string" ? new Date(value) : value;
@@ -59,6 +65,11 @@ export function UsersCards({
                     <p className="text-xs text-muted-foreground truncate">
                       {user.role}
                     </p>
+                    {getSupervisesLabel(user) && (
+                      <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+                        {getSupervisesLabel(user)}
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-center space-x-1">

@@ -77,9 +77,17 @@ export function ContributionsTable({ rows, loading, onRefresh }: ContributionsTa
 
   const sortedRows = useMemo(
     () =>
-      [...rows].sort((a, b) =>
-        a.employeeName.localeCompare(b.employeeName, undefined, { sensitivity: "base" })
-      ),
+      [...rows].sort((a, b) => {
+        const nameA =
+          typeof a.employeeName === "string"
+            ? a.employeeName
+            : String(a.employeeName ?? "");
+        const nameB =
+          typeof b.employeeName === "string"
+            ? b.employeeName
+            : String(b.employeeName ?? "");
+        return nameA.localeCompare(nameB, undefined, { sensitivity: "base" });
+      }),
     [rows]
   );
 

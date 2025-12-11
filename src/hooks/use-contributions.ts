@@ -72,7 +72,7 @@ export function useContributionsState() {
         employeeCode: row.employeeCode,
         avatarUrl: row.avatarUrl,
         eeTotal: row.eeTotal ?? 0,
-        department: row.department,
+        department: typeof row.department === "string" ? row.department : "",
         isSet: row.isSet,
         updatedAt: row.updatedAt,
         sssEe: row.contribution?.sssEe ?? 0,
@@ -91,9 +91,17 @@ export function useContributionsState() {
       setContributions(rows);
 
       const uniqueDepartments = Array.from(
-        new Set(rows.map((r) => r.department).filter(Boolean))
+        new Set(
+          rows
+            .map((r) =>
+              typeof r.department === "string" ? r.department.trim() : ""
+            )
+            .filter((name) => name.length > 0)
+        )
       ) as string[];
-      uniqueDepartments.sort((a, b) => a.localeCompare(b));
+      uniqueDepartments.sort((a, b) =>
+        a.localeCompare(b, undefined, { sensitivity: "base" })
+      );
       setDepartments(uniqueDepartments);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load data");

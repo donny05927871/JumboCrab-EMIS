@@ -149,6 +149,8 @@ model Shift {
   startMinutes        Int      // minutes since midnight (e.g., 9:00 AM -> 540)
   endMinutes          Int      // minutes since midnight (e.g., 6:00 PM -> 1080)
   spansMidnight       Boolean  @default(false) // true when end wraps past midnight
+  breakStartMinutes   Int?
+  breakEndMinutes     Int?
   breakMinutesUnpaid  Int      @default(0)
   paidHoursPerDay     Decimal  @db.Decimal(5, 2) // e.g., 8.00
   isActive            Boolean  @default(true)
@@ -249,6 +251,8 @@ model Attendance {
   actualInAt    DateTime?
   actualOutAt   DateTime?
   workedMinutes Int?
+  breakMinutes  Int @default(0)
+  breakCount    Int @default(0)
 
   // Variances
   lateMinutes             Int @default(0)
@@ -296,14 +300,15 @@ enum ATTENDANCE_STATUS {
   PRESENT
   ABSENT
   LATE
+  INCOMPLETE
   OVERTIME
   HOLIDAY
   REST
 }
 
 enum PUNCH_TYPE {
-  CLOCK_IN
-  CLOCK_OUT
+  TIME_IN
+  TIME_OUT
   BREAK_OUT
   BREAK_IN
 }

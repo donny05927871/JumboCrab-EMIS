@@ -192,17 +192,20 @@ const NavSidebar = ({ userRole }: NavSidebarProps) => {
       // Subitems: roles aligned with parent by default
       subItems: [
         {
-          label: "Attendance Directory",
+          label: "Daily Attendance",
           path: "",
           roles: [
             "admin",
             "generalManager",
             "manager",
+            "supervisor",
+            "clerk",
+            "employee",
           ],
         },
         {
-          label: "View Records",
-          path: "/records",
+          label: "Attendance History",
+          path: "/history",
           roles: [
             "admin",
             "generalManager",
@@ -213,15 +216,45 @@ const NavSidebar = ({ userRole }: NavSidebarProps) => {
           ],
         },
         {
-          label: "Reports",
-          path: "/reports",
+          label: "Overrides",
+          path: "/overrides",
           roles: [
             "admin",
             "generalManager",
             "manager",
             "supervisor",
-            "clerk",
+          ],
+        },
+        {
+          label: "Shifts",
+          path: "/shifts",
+          roles: [
+            "admin",
+            "generalManager",
+            "manager",
+            "supervisor",
+          ],
+        },
+        {
+          label: "Weekly Patterns",
+          path: "/patterns",
+          roles: [
+            "admin",
+            "generalManager",
+            "manager",
+            "supervisor",
+          ],
+        },
+        {
+          label: "My Time",
+          path: "/my-time",
+          roles: [
             "employee",
+            "supervisor",
+            "manager",
+            "clerk",
+            "generalManager",
+            "admin",
           ],
         },
       ],
@@ -279,11 +312,6 @@ const NavSidebar = ({ userRole }: NavSidebarProps) => {
         {
           label: "Contributions Directory",
           path: "",
-          roles: ["admin", "generalManager", "clerk"],
-        },
-        {
-          label: "Set Contribution",
-          path: "/set-contribution",
           roles: ["admin", "generalManager", "clerk"],
         },
         {

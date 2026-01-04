@@ -43,7 +43,8 @@ export default function SignatureDishes() {
             Plates made for slow, shared nights.
           </h2>
           <p className="text-base text-foreground/70 sm:text-lg">
-            Crack, sip, and linger. Mix a crab bucket with grills, pancit, and a round of calamansi spritz.
+            Crack, sip, and linger. Mix a crab bucket with grills, pancit, and a
+            round of calamansi spritz.
           </p>
         </div>
 
@@ -62,7 +63,7 @@ export default function SignatureDishes() {
                   sizes="(min-width: 1024px) 25vw, (min-width: 768px) 50vw, 100vw"
                   priority={dish.title === "Chili Garlic Crab"}
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-black/10 to-transparent" />
+                <div className="absolute inset-0 bg-linear-to-t from-black/50 via-black/10 to-transparent" />
               </div>
               <CardHeader className="gap-2">
                 <CardTitle className="text-lg">{dish.title}</CardTitle>

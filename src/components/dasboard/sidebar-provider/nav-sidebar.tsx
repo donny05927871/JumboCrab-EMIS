@@ -25,6 +25,7 @@ import {
   StickyNote,
   NotebookPen,
   Handshake,
+  TriangleAlertIcon,
 } from "lucide-react";
 import {
   Collapsible,
@@ -218,44 +219,17 @@ const NavSidebar = ({ userRole }: NavSidebarProps) => {
         {
           label: "Overrides",
           path: "/overrides",
-          roles: [
-            "admin",
-            "generalManager",
-            "manager",
-            "supervisor",
-          ],
+          roles: ["admin", "generalManager", "manager", "supervisor"],
         },
         {
           label: "Shifts",
           path: "/shifts",
-          roles: [
-            "admin",
-            "generalManager",
-            "manager",
-            "supervisor",
-          ],
+          roles: ["admin", "generalManager", "manager", "supervisor"],
         },
         {
           label: "Weekly Patterns",
           path: "/patterns",
-          roles: [
-            "admin",
-            "generalManager",
-            "manager",
-            "supervisor",
-          ],
-        },
-        {
-          label: "My Time",
-          path: "/my-time",
-          roles: [
-            "employee",
-            "supervisor",
-            "manager",
-            "clerk",
-            "generalManager",
-            "admin",
-          ],
+          roles: ["admin", "generalManager", "manager", "supervisor"],
         },
       ],
       roles: [
@@ -290,11 +264,6 @@ const NavSidebar = ({ userRole }: NavSidebarProps) => {
           roles: ["admin", "generalManager", "clerk"],
         },
         {
-          label: "Reports",
-          path: "/reports",
-          roles: ["admin", "generalManager", "clerk"],
-        },
-        {
           label: "History",
           path: "/history",
           roles: ["admin", "generalManager", "clerk"],
@@ -321,6 +290,21 @@ const NavSidebar = ({ userRole }: NavSidebarProps) => {
         },
       ],
       roles: ["admin", "generalManager", "clerk"],
+    },
+    {
+      id: "violation",
+      label: "Violation",
+      icon: TriangleAlertIcon,
+      href: `/${userRole}/violations`,
+      hasSubmenu: true,
+      subItems: [
+        {
+          label: "Violation Directory",
+          path: "",
+          roles: ["admin", "manager", "supervisor", "clerk", "employee"],
+        },
+      ],
+      roles: ["admin", "manager", "supervisor", "clerk", "employee"],
     },
     {
       id: "payroll",
@@ -356,41 +340,6 @@ const NavSidebar = ({ userRole }: NavSidebarProps) => {
         },
       ],
       roles: ["admin", "generalManager", "clerk", "employee"],
-    },
-    {
-      id: "memo",
-      label: "Memo",
-      icon: StickyNote,
-      href: `/${userRole}/memo`,
-      hasSubmenu: true,
-      subItems: [
-        {
-          label: "Inbox",
-          path: "",
-          roles: ["admin", "manager", "supervisor", "clerk", "employee"],
-        },
-        {
-          label: "Compose",
-          path: "/compose",
-          roles: ["admin", "manager", "supervisor", "clerk", "employee"],
-        },
-        {
-          label: "Sent",
-          path: "/sent",
-          roles: ["admin", "manager", "supervisor", "clerk", "employee"],
-        },
-        {
-          label: "Drafts",
-          path: "/drafts",
-          roles: ["admin", "manager", "supervisor", "clerk", "employee"],
-        },
-        {
-          label: "Templates",
-          path: "/templates",
-          roles: ["admin", "manager", "supervisor", "clerk", "employee"],
-        },
-      ],
-      roles: ["admin", "manager", "supervisor", "clerk", "employee"],
     },
     {
       id: "requests",

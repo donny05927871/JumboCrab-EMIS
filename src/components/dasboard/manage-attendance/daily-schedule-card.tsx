@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { RefreshCcw } from "lucide-react";
-import { ScheduleEntry, formatMinutes } from "./schedule-types";
+import { ScheduleEntry, formatMinutes } from "../../../types/schedule-types";
 
 type DailyScheduleCardProps = {
   date: string;
@@ -91,7 +91,9 @@ export function DailyScheduleCard({
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {entry.shift
-                        ? `${formatMinutes(entry.scheduledStartMinutes)} - ${formatMinutes(entry.scheduledEndMinutes)}`
+                        ? `${formatMinutes(
+                            entry.scheduledStartMinutes
+                          )} - ${formatMinutes(entry.scheduledEndMinutes)}`
                         : "—"}
                     </TableCell>
                     <TableCell>

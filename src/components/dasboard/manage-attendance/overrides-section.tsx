@@ -25,7 +25,7 @@ import {
   formatDateDisplay,
   formatRangeLabel,
   formatMinutes,
-} from "./schedule-types";
+} from "../../../types/schedule-types";
 import { DateRange } from "react-day-picker";
 import { CalendarClock, Pencil, Trash2 } from "lucide-react";
 import { TZ } from "@/lib/timezone";
@@ -159,10 +159,18 @@ export function OverridesSection({
                     </p>
                   </div>
                   <div className="flex gap-2">
-                    <Button variant="ghost" size="sm" onClick={onClearSelection}>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={onClearSelection}
+                    >
                       Clear
                     </Button>
-                    <Button size="sm" variant="outline" onClick={onOpenCalendar}>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={onOpenCalendar}
+                    >
                       Open calendar
                     </Button>
                   </div>
@@ -195,7 +203,12 @@ export function OverridesSection({
                 Current day overrides and upcoming ones.
               </p>
             </div>
-            <Button variant="ghost" size="sm" onClick={onRefresh} className="gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onRefresh}
+              className="gap-2"
+            >
               Refresh
             </Button>
           </CardHeader>
@@ -408,7 +421,10 @@ export function OverridesSection({
               Clear selection
             </Button>
             <div className="flex gap-2">
-              <Button variant="ghost" onClick={() => onOverridePickerOpenChange(false)}>
+              <Button
+                variant="ghost"
+                onClick={() => onOverridePickerOpenChange(false)}
+              >
                 Done
               </Button>
             </div>

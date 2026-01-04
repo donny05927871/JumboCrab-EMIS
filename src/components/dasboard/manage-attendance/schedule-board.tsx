@@ -21,7 +21,7 @@ import {
   todayISO,
   toDateInputValue,
   makeDate,
-} from "./schedule-types";
+} from "../../../types/schedule-types";
 
 const parseTimeToMinutes = (value?: string | null) => {
   if (!value) return null;
@@ -40,7 +40,8 @@ const deriveShiftCalcs = (
 ) => {
   const start = parseTimeToMinutes(startTime);
   const end = parseTimeToMinutes(endTime);
-  if (start == null || end == null) return { breakMinutes: 0, paidHours: 0, totalMinutes: 0 };
+  if (start == null || end == null)
+    return { breakMinutes: 0, paidHours: 0, totalMinutes: 0 };
   let totalMinutes =
     spansMidnight && end <= start ? end + 24 * 60 - start : end - start;
   if (totalMinutes < 0) totalMinutes = 0;
@@ -53,7 +54,9 @@ const deriveShiftCalcs = (
     breakMinutes = Math.max(0, Math.min(totalMinutes, endVal - bStart));
   }
   const paidHours =
-    totalMinutes > 0 ? Number(((totalMinutes - breakMinutes) / 60).toFixed(2)) : 0;
+    totalMinutes > 0
+      ? Number(((totalMinutes - breakMinutes) / 60).toFixed(2))
+      : 0;
   return { breakMinutes, paidHours, totalMinutes };
 };
 
@@ -65,7 +68,9 @@ export function ScheduleBoard({ mode = "full" }: ScheduleBoardProps) {
   const [date, setDate] = useState(todayISO());
   const [entries, setEntries] = useState<ScheduleEntry[]>([]);
   const [patterns, setPatterns] = useState<Pattern[]>([]);
-  const [patternAssignments, setPatternAssignments] = useState<PatternAssignment[]>([]);
+  const [patternAssignments, setPatternAssignments] = useState<
+    PatternAssignment[]
+  >([]);
   const [shifts, setShifts] = useState<ShiftLite[]>([]);
   const [overrides, setOverrides] = useState<OverrideRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -135,7 +140,8 @@ export function ScheduleBoard({ mode = "full" }: ScheduleBoardProps) {
   const showOverrideTables = mode !== "patterns";
   const showShifts = mode === "full";
   const showWeeklyPatterns = mode !== "overrides";
-  const showPatternsUI = showAssignPattern || showCreatePattern || showWeeklyPatterns;
+  const showPatternsUI =
+    showAssignPattern || showCreatePattern || showWeeklyPatterns;
 
   const countDays = (start: string, end: string) => {
     const s = new Date(start);
@@ -173,8 +179,10 @@ export function ScheduleBoard({ mode = "full" }: ScheduleBoardProps) {
         overrideRes.json(),
         assignmentsRes.json(),
       ]);
-      if (!scheduleRes.ok) throw new Error(scheduleJson?.error || "Failed to load schedule");
-      if (!overrideRes.ok) throw new Error(overrideJson?.error || "Failed to load overrides");
+      if (!scheduleRes.ok)
+        throw new Error(scheduleJson?.error || "Failed to load schedule");
+      if (!overrideRes.ok)
+        throw new Error(overrideJson?.error || "Failed to load overrides");
 
       setEntries(
         (scheduleJson?.schedule ?? []).map((entry: any) => ({
@@ -229,8 +237,14 @@ export function ScheduleBoard({ mode = "full" }: ScheduleBoardProps) {
       startTime: minutesToTimeInput(shift.startMinutes),
       endTime: minutesToTimeInput(shift.endMinutes),
       spansMidnight: Boolean(shift.spansMidnight),
-      breakStartTime: shift.breakStartMinutes != null ? minutesToTimeInput(shift.breakStartMinutes) : "",
-      breakEndTime: shift.breakEndMinutes != null ? minutesToTimeInput(shift.breakEndMinutes) : "",
+      breakStartTime:
+        shift.breakStartMinutes != null
+          ? minutesToTimeInput(shift.breakStartMinutes)
+          : "",
+      breakEndTime:
+        shift.breakEndMinutes != null
+          ? minutesToTimeInput(shift.breakEndMinutes)
+          : "",
       notes: shift.notes ?? "",
     });
     setShiftEditError(null);
@@ -573,7 +587,9 @@ export function ScheduleBoard({ mode = "full" }: ScheduleBoardProps) {
       setOverrideDate(value.from.toLocaleDateString("en-CA", { timeZone: TZ }));
     }
     if (value.to) {
-      setOverrideEndDate(value.to.toLocaleDateString("en-CA", { timeZone: TZ }));
+      setOverrideEndDate(
+        value.to.toLocaleDateString("en-CA", { timeZone: TZ })
+      );
       setOverrideIsRange(true);
     } else {
       setOverrideEndDate(null);
@@ -775,7 +791,7 @@ export function ScheduleBoard({ mode = "full" }: ScheduleBoardProps) {
         onSaveEdit={saveShiftEdit}
         onCancelEdit={cancelShiftEdit}
         onDeleteShift={async (id) => {
-          await fetch(`/api/shifts?id=${id}`, { method: 'DELETE' });
+          await fetch(`/api/shifts?id=${id}`, { method: "DELETE" });
           await load();
         }}
         onCreateShift={handleCreateShift}

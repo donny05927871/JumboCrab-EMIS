@@ -10,7 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ShiftLite, formatMinutes } from "./schedule-types";
+import { ShiftLite, formatMinutes } from "../../../types/schedule-types";
 import { Check, Pencil, Plus, RefreshCcw, Trash2, X } from "lucide-react";
 
 const parseTimeToMinutes = (value?: string | null) => {
@@ -30,7 +30,8 @@ const deriveShiftCalcs = (
 ) => {
   const start = parseTimeToMinutes(startTime);
   const end = parseTimeToMinutes(endTime);
-  if (start == null || end == null) return { breakMinutes: 0, paidHours: 0, totalMinutes: 0 };
+  if (start == null || end == null)
+    return { breakMinutes: 0, paidHours: 0, totalMinutes: 0 };
   let totalMinutes =
     spansMidnight && end <= start ? end + 24 * 60 - start : end - start;
   if (totalMinutes < 0) totalMinutes = 0;
@@ -46,7 +47,9 @@ const deriveShiftCalcs = (
     breakMinutes = Math.max(0, Math.min(totalMinutes, endVal - bStart));
   }
   const paidHours =
-    totalMinutes > 0 ? Number(((totalMinutes - breakMinutes) / 60).toFixed(2)) : 0;
+    totalMinutes > 0
+      ? Number(((totalMinutes - breakMinutes) / 60).toFixed(2))
+      : 0;
   return { breakMinutes, paidHours, totalMinutes };
 };
 
@@ -134,7 +137,12 @@ export function ShiftsSection({
               Edit existing shifts inline.
             </p>
           </div>
-          <Button variant="ghost" size="sm" onClick={onRefresh} className="gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onRefresh}
+            className="gap-2"
+          >
             <RefreshCcw className="h-4 w-4" /> Refresh
           </Button>
         </CardHeader>
@@ -146,13 +154,13 @@ export function ShiftsSection({
               <Table>
                 <TableHeader>
                   <TableRow>
-                  <TableHead>Code</TableHead>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Time</TableHead>
-                  <TableHead>Break window</TableHead>
-                  <TableHead>Break (min)</TableHead>
-                  <TableHead>Paid hrs</TableHead>
-                  <TableHead>Spans midnight</TableHead>
+                    <TableHead>Code</TableHead>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Time</TableHead>
+                    <TableHead>Break window</TableHead>
+                    <TableHead>Break (min)</TableHead>
+                    <TableHead>Paid hrs</TableHead>
+                    <TableHead>Spans midnight</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -177,7 +185,10 @@ export function ShiftsSection({
                               value={shiftEdit?.code ?? ""}
                               onChange={(e) =>
                                 shiftEdit &&
-                                onChangeEdit({ ...shiftEdit, code: e.target.value })
+                                onChangeEdit({
+                                  ...shiftEdit,
+                                  code: e.target.value,
+                                })
                               }
                             />
                           ) : (
@@ -190,7 +201,10 @@ export function ShiftsSection({
                               value={shiftEdit?.name ?? ""}
                               onChange={(e) =>
                                 shiftEdit &&
-                                onChangeEdit({ ...shiftEdit, name: e.target.value })
+                                onChangeEdit({
+                                  ...shiftEdit,
+                                  name: e.target.value,
+                                })
                               }
                             />
                           ) : (
@@ -224,9 +238,9 @@ export function ShiftsSection({
                               />
                             </div>
                           ) : (
-                            `${formatMinutes(shift.startMinutes)} - ${formatMinutes(
-                              shift.endMinutes
-                            )}`
+                            `${formatMinutes(
+                              shift.startMinutes
+                            )} - ${formatMinutes(shift.endMinutes)}`
                           )}
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
@@ -255,8 +269,11 @@ export function ShiftsSection({
                                 }
                               />
                             </div>
-                          ) : shift.breakStartMinutes != null && shift.breakEndMinutes != null ? (
-                            `${formatMinutes(shift.breakStartMinutes)} - ${formatMinutes(shift.breakEndMinutes)}`
+                          ) : shift.breakStartMinutes != null &&
+                            shift.breakEndMinutes != null ? (
+                            `${formatMinutes(
+                              shift.breakStartMinutes
+                            )} - ${formatMinutes(shift.breakEndMinutes)}`
                           ) : (
                             "—"
                           )}
@@ -430,7 +447,9 @@ export function ShiftsSection({
                   id="spans-midnight"
                   type="checkbox"
                   checked={shiftSpansMidnight}
-                  onChange={(e) => onChangeField("spansMidnight", e.target.checked)}
+                  onChange={(e) =>
+                    onChangeField("spansMidnight", e.target.checked)
+                  }
                   className="h-4 w-4"
                 />
                 <label
@@ -450,7 +469,9 @@ export function ShiftsSection({
               />
             </div>
           </div>
-          {shiftError && <p className="text-sm text-destructive">{shiftError}</p>}
+          {shiftError && (
+            <p className="text-sm text-destructive">{shiftError}</p>
+          )}
           <div className="flex justify-end">
             <Button
               onClick={onCreateShift}

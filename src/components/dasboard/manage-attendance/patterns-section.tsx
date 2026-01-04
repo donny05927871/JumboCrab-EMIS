@@ -23,7 +23,15 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { CalendarClock, ChevronDown, ChevronRight, Pencil, Plus, RefreshCcw, Trash2 } from "lucide-react";
+import {
+  CalendarClock,
+  ChevronDown,
+  ChevronRight,
+  Pencil,
+  Plus,
+  RefreshCcw,
+  Trash2,
+} from "lucide-react";
 import { TZ } from "@/lib/timezone";
 import {
   EmployeeLite,
@@ -34,7 +42,7 @@ import {
   formatDateDisplay,
   makeDate,
   patternLabel,
-} from "./schedule-types";
+} from "../../../types/schedule-types";
 
 export type PatternEditState = {
   code: string;
@@ -171,14 +179,20 @@ export function PatternsSection({
     });
   }, [assignments, assignmentPatternFilter, assignmentSearch]);
 
-  const [expandedEmployees, setExpandedEmployees] = useState<Record<string, boolean>>({});
-  const [assignmentEdit, setAssignmentEdit] = useState<PatternAssignment | null>(null);
+  const [expandedEmployees, setExpandedEmployees] = useState<
+    Record<string, boolean>
+  >({});
+  const [assignmentEdit, setAssignmentEdit] =
+    useState<PatternAssignment | null>(null);
   const [assignmentEditPattern, setAssignmentEditPattern] = useState("");
   const [assignmentEditDate, setAssignmentEditDate] = useState("");
   const [assignmentSaving, setAssignmentSaving] = useState(false);
 
   const groupedAssignments = useMemo(() => {
-    const grouped: Record<string, { employee: EmployeeLite; entries: PatternAssignment[] }> = {};
+    const grouped: Record<
+      string,
+      { employee: EmployeeLite; entries: PatternAssignment[] }
+    > = {};
     for (const a of filteredAssignments) {
       if (!grouped[a.employeeId]) {
         grouped[a.employeeId] = { employee: a.employee, entries: [] };
@@ -202,7 +216,8 @@ export function PatternsSection({
   };
 
   const saveAssignmentEdit = async () => {
-    if (!assignmentEdit || !assignmentEditPattern || !assignmentEditDate) return;
+    if (!assignmentEdit || !assignmentEditPattern || !assignmentEditDate)
+      return;
     try {
       setAssignmentSaving(true);
       await fetch("/api/schedule/assign", {
@@ -240,12 +255,21 @@ export function PatternsSection({
                     placeholder="Select employee"
                     value={
                       assignEmployeeId
-                        ? filteredEmployees.find((e) => e.employeeId === assignEmployeeId)?.firstName +
+                        ? filteredEmployees.find(
+                            (e) => e.employeeId === assignEmployeeId
+                          )?.firstName +
                           " " +
-                          filteredEmployees.find((e) => e.employeeId === assignEmployeeId)?.lastName
+                          filteredEmployees.find(
+                            (e) => e.employeeId === assignEmployeeId
+                          )?.lastName
                         : ""
                     }
-                    onFocus={() => setExpandedEmployees((prev) => ({ ...prev, __empPicker: true }))}
+                    onFocus={() =>
+                      setExpandedEmployees((prev) => ({
+                        ...prev,
+                        __empPicker: true,
+                      }))
+                    }
                     readOnly
                   />
                   {(expandedEmployees as any).__empPicker && (
@@ -263,7 +287,10 @@ export function PatternsSection({
                             key={emp.employeeId}
                             onClick={() => {
                               onAssignEmployeeChange(emp.employeeId);
-                              setExpandedEmployees((prev) => ({ ...prev, __empPicker: false }));
+                              setExpandedEmployees((prev) => ({
+                                ...prev,
+                                __empPicker: false,
+                              }));
                             }}
                             className="w-full text-left px-2 py-2 hover:bg-muted/60"
                           >
@@ -276,14 +303,21 @@ export function PatternsSection({
                           </button>
                         ))}
                         {filteredEmployees.length === 0 && (
-                          <div className="px-2 py-2 text-sm text-muted-foreground">No matches</div>
+                          <div className="px-2 py-2 text-sm text-muted-foreground">
+                            No matches
+                          </div>
                         )}
                       </div>
                       <div className="flex justify-end">
                         <Button
                           size="sm"
                           variant="ghost"
-                          onClick={() => setExpandedEmployees((prev) => ({ ...prev, __empPicker: false }))}
+                          onClick={() =>
+                            setExpandedEmployees((prev) => ({
+                              ...prev,
+                              __empPicker: false,
+                            }))
+                          }
                         >
                           Close
                         </Button>
@@ -299,10 +333,16 @@ export function PatternsSection({
                     placeholder="Select pattern"
                     value={
                       assignPatternId
-                        ? filteredPatterns.find((p) => p.id === assignPatternId)?.name || ""
+                        ? filteredPatterns.find((p) => p.id === assignPatternId)
+                            ?.name || ""
                         : ""
                     }
-                    onFocus={() => setExpandedEmployees((prev) => ({ ...prev, __patPicker: true }))}
+                    onFocus={() =>
+                      setExpandedEmployees((prev) => ({
+                        ...prev,
+                        __patPicker: true,
+                      }))
+                    }
                     readOnly
                   />
                   {(expandedEmployees as any).__patPicker && (
@@ -320,23 +360,35 @@ export function PatternsSection({
                             key={p.id}
                             onClick={() => {
                               onAssignPatternChange(p.id);
-                              setExpandedEmployees((prev) => ({ ...prev, __patPicker: false }));
+                              setExpandedEmployees((prev) => ({
+                                ...prev,
+                                __patPicker: false,
+                              }));
                             }}
                             className="w-full text-left px-2 py-2 hover:bg-muted/60"
                           >
                             <div className="font-medium">{p.name}</div>
-                            <div className="text-xs text-muted-foreground">{p.code}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {p.code}
+                            </div>
                           </button>
                         ))}
                         {filteredPatterns.length === 0 && (
-                          <div className="px-2 py-2 text-sm text-muted-foreground">No matches</div>
+                          <div className="px-2 py-2 text-sm text-muted-foreground">
+                            No matches
+                          </div>
                         )}
                       </div>
                       <div className="flex justify-end">
                         <Button
                           size="sm"
                           variant="ghost"
-                          onClick={() => setExpandedEmployees((prev) => ({ ...prev, __patPicker: false }))}
+                          onClick={() =>
+                            setExpandedEmployees((prev) => ({
+                              ...prev,
+                              __patPicker: false,
+                            }))
+                          }
                         >
                           Close
                         </Button>
@@ -401,7 +453,9 @@ export function PatternsSection({
       <Card className="shadow-sm">
         <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <CardTitle className="text-lg">Current Pattern Assignments</CardTitle>
+            <CardTitle className="text-lg">
+              Current Pattern Assignments
+            </CardTitle>
             <p className="text-sm text-muted-foreground">
               Latest weekly pattern per employee.
             </p>
@@ -429,7 +483,9 @@ export function PatternsSection({
         </CardHeader>
         <CardContent className="space-y-3">
           {groupedAssignments.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No assignments found.</p>
+            <p className="text-sm text-muted-foreground">
+              No assignments found.
+            </p>
           ) : (
             <div className="overflow-x-auto rounded-lg border">
               <table className="w-full text-sm">
@@ -444,10 +500,14 @@ export function PatternsSection({
                 </thead>
                 <tbody>
                   {groupedAssignments.map(({ employee, latest, older }) => {
-                    const expanded = expandedEmployees[employee.employeeId] ?? false;
+                    const expanded =
+                      expandedEmployees[employee.employeeId] ?? false;
                     return (
                       <React.Fragment key={employee.employeeId}>
-                        <tr key={`${employee.employeeId}-${latest.effectiveDate}`} className="border-t">
+                        <tr
+                          key={`${employee.employeeId}-${latest.effectiveDate}`}
+                          className="border-t"
+                        >
                           <td className="px-3 py-2">
                             <div className="flex items-start gap-2">
                               {older.length > 0 && (
@@ -473,7 +533,8 @@ export function PatternsSection({
                                   {employee.firstName} {employee.lastName}
                                 </span>
                                 <span className="text-xs text-muted-foreground">
-                                  {employee.employeeCode} · {employee.department?.name || "—"}
+                                  {employee.employeeCode} ·{" "}
+                                  {employee.department?.name || "—"}
                                 </span>
                               </div>
                             </div>
@@ -490,7 +551,12 @@ export function PatternsSection({
                             </span>
                           </td>
                           <td className="px-3 py-2 text-right">
-                            <Button size="sm" variant="ghost" className="gap-1" onClick={() => openEditAssignment(latest)}>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="gap-1"
+                              onClick={() => openEditAssignment(latest)}
+                            >
                               <Pencil className="h-4 w-4" />
                               Edit
                             </Button>
@@ -507,7 +573,10 @@ export function PatternsSection({
                         </tr>
                         {expanded &&
                           older.map((a) => (
-                            <tr key={`${employee.employeeId}-${a.effectiveDate}`} className="border-t bg-muted/30">
+                            <tr
+                              key={`${employee.employeeId}-${a.effectiveDate}`}
+                              className="border-t bg-muted/30"
+                            >
                               <td className="px-3 py-2 pl-10 text-sm text-muted-foreground">
                                 Older assignment
                               </td>
@@ -523,7 +592,12 @@ export function PatternsSection({
                                 </span>
                               </td>
                               <td className="px-3 py-2 text-right">
-                                <Button size="sm" variant="ghost" className="gap-1" onClick={() => openEditAssignment(a)}>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="gap-1"
+                                  onClick={() => openEditAssignment(a)}
+                                >
                                   <Pencil className="h-4 w-4" />
                                   Edit
                                 </Button>
@@ -549,14 +623,19 @@ export function PatternsSection({
         </CardContent>
       </Card>
 
-      <Dialog open={!!assignmentEdit} onOpenChange={(open) => !open && setAssignmentEdit(null)}>
+      <Dialog
+        open={!!assignmentEdit}
+        onOpenChange={(open) => !open && setAssignmentEdit(null)}
+      >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Edit assignment</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div className="text-sm text-muted-foreground">
-              {assignmentEdit?.employee.firstName} {assignmentEdit?.employee.lastName} ({assignmentEdit?.employee.employeeCode})
+              {assignmentEdit?.employee.firstName}{" "}
+              {assignmentEdit?.employee.lastName} (
+              {assignmentEdit?.employee.employeeCode})
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Pattern</label>
@@ -575,14 +654,25 @@ export function PatternsSection({
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Effective date</label>
-              <Input type="date" value={assignmentEditDate} onChange={(e) => setAssignmentEditDate(e.target.value)} />
+              <Input
+                type="date"
+                value={assignmentEditDate}
+                onChange={(e) => setAssignmentEditDate(e.target.value)}
+              />
             </div>
           </div>
           <DialogFooter className="gap-2">
             <Button variant="ghost" onClick={() => setAssignmentEdit(null)}>
               Cancel
             </Button>
-            <Button onClick={saveAssignmentEdit} disabled={assignmentSaving || !assignmentEditPattern || !assignmentEditDate}>
+            <Button
+              onClick={saveAssignmentEdit}
+              disabled={
+                assignmentSaving ||
+                !assignmentEditPattern ||
+                !assignmentEditDate
+              }
+            >
               {assignmentSaving ? "Saving..." : "Save"}
             </Button>
           </DialogFooter>
@@ -670,7 +760,12 @@ export function PatternsSection({
                 View and edit weekly patterns.
               </p>
             </div>
-            <Button variant="ghost" size="sm" onClick={onRefresh} className="gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onRefresh}
+              className="gap-2"
+            >
               <RefreshCcw className="h-4 w-4" /> Refresh
             </Button>
           </CardHeader>
@@ -771,7 +866,10 @@ export function PatternsSection({
                   value={patternEdit?.code ?? ""}
                   onChange={(e) =>
                     patternEdit &&
-                    onPatternEditChange({ ...patternEdit, code: e.target.value })
+                    onPatternEditChange({
+                      ...patternEdit,
+                      code: e.target.value,
+                    })
                   }
                   placeholder="PAT-WEEKDAY"
                 />
@@ -782,7 +880,10 @@ export function PatternsSection({
                   value={patternEdit?.name ?? ""}
                   onChange={(e) =>
                     patternEdit &&
-                    onPatternEditChange({ ...patternEdit, name: e.target.value })
+                    onPatternEditChange({
+                      ...patternEdit,
+                      name: e.target.value,
+                    })
                   }
                   placeholder="Weekday Pattern"
                 />
@@ -834,7 +935,9 @@ export function PatternsSection({
               variant="ghost"
               className="gap-2 text-destructive"
               disabled={patternEditSaving || !patternEdit}
-              onClick={() => editingPatternId && onDeletePattern(editingPatternId)}
+              onClick={() =>
+                editingPatternId && onDeletePattern(editingPatternId)
+              }
             >
               <Trash2 className="h-4 w-4" />
               Delete

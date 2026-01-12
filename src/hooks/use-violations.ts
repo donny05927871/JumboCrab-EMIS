@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 // import { setErrorMap } from "zod";
 
 export type violationRow = {
@@ -97,5 +97,17 @@ export function useViolationsState() {
     setStatusFilter,
   };
 }
+
+export const violationsContext = createContext<
+  ReturnType<typeof useViolationsState> | undefined
+>(undefined);
+
+export const useViolations = () => {
+  const context = useContext(violationsContext);
+  if (!context) {
+    throw new Error("useViolations must be used within a violationsProvider");
+  }
+  return context;
+};
 
 export type ViolationsState = ReturnType<typeof useViolationsState>;

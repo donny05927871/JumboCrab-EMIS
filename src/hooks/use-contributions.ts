@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 
 export type ContributionRow = {
   employeeId: string;
@@ -126,6 +126,19 @@ export function useContributionsState() {
     departments,
     refreshContributions,
   };
+}
+
+export const ContributionsContext = createContext<
+  ReturnType<typeof useContributionsState> | undefined
+>(undefined);
+export function useContributions() {
+  const context = useContext(ContributionsContext);
+  if (!context) {
+    throw new Error(
+      "useContributions must be used within a ContributionsProvider"
+    );
+  }
+  return context;
 }
 
 export type ContributionsState = ReturnType<typeof useContributionsState>;

@@ -18,7 +18,7 @@ const DynamicQr = () => {
 
     const id = setInterval(() => {
       setQrValue(makeValue());
-    }, 60_000); // 1 minute
+    }, 5_000); // 1 minute
 
     return () => clearInterval(id);
   }, []);

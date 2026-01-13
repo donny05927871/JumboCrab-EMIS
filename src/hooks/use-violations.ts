@@ -1,24 +1,10 @@
 "use client";
 
+import { getViolations, type ViolationRow } from "@/actions/violations/violations-action";
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 // import { setErrorMap } from "zod";
 
-export type violationRow = {
-  id: string;
-  employeeId: string;
-  employeeName: string;
-  employeeCode: string;
-  avatarUrl?: string | null;
-  violationType: string;
-  violationDate: string;
-  amount?: number;
-  paidAmount: number;
-  remainingAmount: number;
-  installmentAmount?: number;
-  status: string;
-  remarks?: string;
-  createdAt: string;
-};
+export type violationRow = ViolationRow;
 
 export function useViolationsState() {
   const [violations, setViolations] = useState<violationRow[]>([]);
@@ -53,28 +39,11 @@ export function useViolationsState() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/violations");
-      if (!res.ok) {
-        throw new Error("Failed to fetch violations");
+      const result = await getViolations();
+      if (!result.success) {
+        throw new Error(result.error || "Failed to fetch violations");
       }
-      const data = await res.json();
-      const row: violationRow[] = (data?.data || []).map((row: any) => ({
-        id: row.id,
-        employeeId: row.employeeId,
-        employeeName: row.employeeName ?? "",
-        employeeCode: row.employeeCode ?? "",
-        avatarUrl: row.avatarUrl ?? null,
-        violationType: row.violationType,
-        violationDate: row.violationDate,
-        amount: row.amount,
-        paidAmount: row.paidAmount,
-        remainingAmount: row.remainingAmount,
-        installmentAmount: row.installmentAmount,
-        status: row.status,
-        remarks: row.remarks,
-        createdAt: row.createdAt,
-      }));
-      setViolations(row);
+      setViolations(result.data ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load data");
     } finally {

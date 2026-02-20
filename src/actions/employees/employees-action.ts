@@ -494,6 +494,7 @@ export async function getEmployeesWithoutUser() {
         lastName: true,
         employeeCode: true,
         email: true,
+        img: true,
       },
       orderBy: {
         employeeCode: "asc",

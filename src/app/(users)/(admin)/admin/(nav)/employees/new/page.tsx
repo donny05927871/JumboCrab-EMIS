@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -8,7 +8,7 @@ import EmployeeForm from "@/components/dasboard/manage-empoyees/employee-form";
 
 export default function AddEmployeePage() {
   return (
-    <div className="space-y-6 p-4">
+    <div className="px-4 py-8 sm:px-8 lg:px-12">
       <div className="flex justify-between items-start">
         <div>
           <h3 className="text-lg font-medium">Add New Employee</h3>
@@ -23,7 +23,7 @@ export default function AddEmployeePage() {
           </Link>
         </Button>
       </div>
-      
+
       <Card className="border-border shadow-sm">
         <CardContent className="p-6">
           <EmployeeForm employeeId={null} mode="create" />

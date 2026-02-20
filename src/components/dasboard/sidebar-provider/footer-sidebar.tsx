@@ -1,23 +1,13 @@
 "use client";
 
-import {
-  BadgeCheck,
-  Bell,
-  ChevronsUpDown,
-  CreditCard,
-  LogOut,
-  LogOutIcon,
-  Sparkles,
-} from "lucide-react";
+import { ChevronsUpDown, LogOutIcon } from "lucide-react";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -27,7 +17,15 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { SignOutButton } from "@/components/ui/signout";
-import { useSession } from "@/hooks/use-session";
+
+const getUserInitials = (name: string) => {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "U";
+  if (parts.length === 1) return parts[0]?.charAt(0)?.toUpperCase() || "U";
+  return `${parts[0]?.charAt(0) ?? ""}${
+    parts[parts.length - 1]?.charAt(0) ?? ""
+  }`.toUpperCase();
+};
 
 export function FooterSidebar({
   user,
@@ -35,10 +33,15 @@ export function FooterSidebar({
   user: {
     name: string;
     email: string;
-    avatar: string;
+    avatar?: string | null;
   };
 }) {
   const { isMobile } = useSidebar();
+  const initials = getUserInitials(user.name || "User");
+  const avatarSrc =
+    typeof user.avatar === "string" && user.avatar.trim().length > 0
+      ? user.avatar
+      : undefined;
 
   return (
     // Center footer when collapsed; tweak alignment in classes below
@@ -52,8 +55,8 @@ export function FooterSidebar({
               className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground justify-start group-data-[collapsible=icon]:justify-center"
             >
               <Avatar className="h-8 w-8 rounded-lg">
-                <AvatarImage src={user.avatar} alt={user.name} />
-                <AvatarFallback className="rounded-lg">CN</AvatarFallback>
+                <AvatarImage src={avatarSrc} alt={user.name} className="object-cover" />
+                <AvatarFallback className="rounded-lg">{initials}</AvatarFallback>
               </Avatar>
               {/* Hide text when collapsed; edit to change behavior */}
               <div className="grid flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden">
@@ -73,8 +76,8 @@ export function FooterSidebar({
             <DropdownMenuLabel className="p-0 font-normal">
               <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
                 <Avatar className="h-8 w-8 rounded-lg">
-                  <AvatarImage src={user.avatar} alt={user.name} />
-                  <AvatarFallback className="rounded-lg">CN</AvatarFallback>
+                  <AvatarImage src={avatarSrc} alt={user.name} className="object-cover" />
+                  <AvatarFallback className="rounded-lg">{initials}</AvatarFallback>
                 </Avatar>
                 <div className="grid flex-1 text-left text-sm leading-tight">
                   <span className="truncate font-medium">{user.name}</span>

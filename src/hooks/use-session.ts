@@ -6,11 +6,12 @@ import { fetchSession } from "@/actions/auth/session-action";
 import { User } from "@/lib/validations/users";
 
 interface RawSession {
+  userId?: string;
   id?: string;
   username?: string;
   email?: string;
-  role?: string;
-  employee?: any;
+  role?: User["role"];
+  employee?: Session["user"]["employee"];
   isLoggedIn: boolean;
 }
 
@@ -30,18 +31,23 @@ export function useSession() {
 
         const rawSession = result.session as unknown as RawSession;
 
+        if (!rawSession.isLoggedIn || !(rawSession.userId || rawSession.id)) {
+          setSession(null);
+          return;
+        }
+
         const userData: User = {
-          userId: rawSession.id || "",
+          userId: rawSession.userId || rawSession.id || "",
           username: rawSession.username || "",
           email: rawSession.email || "",
-          role: rawSession.role as any,
+          role: rawSession.role || "employee",
           isDisabled: false,
         };
 
         const sessionData: Session = {
           user: {
             ...userData,
-            employee: rawSession.employee || null,
+            employee: rawSession.employee ?? null,
           },
           expires: new Date(Date.now() + 1000 * 60 * 60 * 24).toISOString(),
         };

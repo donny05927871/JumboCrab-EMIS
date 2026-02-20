@@ -1,61 +1,96 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "./src/lib/middleware-auth";
+import { unsealData } from "iron-session";
+import {
+  getAllowedRolesForPath,
+  getHomePathForRole,
+  getRoleFromPath,
+  normalizeRole,
+  toCanonicalRolePath,
+} from "@/lib/rbac";
+
+type SessionPayload = {
+  isLoggedIn?: boolean;
+  role?: string;
+};
+
+const SESSION_COOKIE_NAME = "jumbo-auth";
+
+function isPublicPath(pathname: string) {
+  return pathname === "/" || pathname.startsWith("/sign-in");
+}
+
+function createRedirect(request: NextRequest, path: string) {
+  const url = request.nextUrl.clone();
+  url.pathname = path;
+  return NextResponse.redirect(url);
+}
+
+function redirectToSignIn(request: NextRequest) {
+  const url = request.nextUrl.clone();
+  url.pathname = "/sign-in";
+  url.searchParams.set(
+    "next",
+    `${request.nextUrl.pathname}${request.nextUrl.search}`,
+  );
+  return NextResponse.redirect(url);
+}
+
+async function readSession(request: NextRequest) {
+  const sealedSession = request.cookies.get(SESSION_COOKIE_NAME)?.value;
+  const password = process.env.SESSION_PASSWORD;
+
+  if (!sealedSession || !password) {
+    return { isLoggedIn: false, role: null };
+  }
+
+  try {
+    const session = await unsealData<SessionPayload>(sealedSession, {
+      password,
+    });
+
+    return {
+      isLoggedIn: Boolean(session?.isLoggedIn),
+      role: normalizeRole(session?.role),
+    };
+  } catch {
+    return { isLoggedIn: false, role: null };
+  }
+}
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Allow access to auth pages, API routes, and static assets
-  if (
-    pathname.startsWith("/sign-in") ||
-    pathname.startsWith("/api/auth") ||
-    pathname.startsWith("/_next") ||
-    pathname.startsWith("/favicon.ico") ||
-    pathname === "/"
-  ) {
+  if (isPublicPath(pathname)) {
     return NextResponse.next();
   }
 
-  // Check if user is authenticated
-  const session = await getSession();
+  const canonicalPath = toCanonicalRolePath(pathname);
+  const session = await readSession(request);
 
-  if (!session.isLoggedIn) {
-    // Redirect to sign-in page if not authenticated
-    const signInUrl = new URL("/sign-in", request.url);
-    return NextResponse.redirect(signInUrl);
+  if (!session.isLoggedIn || !session.role) {
+    return redirectToSignIn(request);
   }
 
-  // Role-based access control
-  const userRole = session.role?.toLowerCase();
-
-  // Check if user is trying to access their own role-based routes
-  if (pathname.startsWith("/admin/") && userRole !== "admin") {
-    const signInUrl = new URL("/sign-in", request.url);
-    return NextResponse.redirect(signInUrl);
+  const roleFromPath = getRoleFromPath(pathname);
+  if (roleFromPath && roleFromPath !== session.role) {
+    return createRedirect(request, getHomePathForRole(session.role));
   }
 
-  if (pathname.startsWith("/employee/") && userRole !== "employee") {
-    const signInUrl = new URL("/sign-in", request.url);
-    return NextResponse.redirect(signInUrl);
+  const allowedRoles = getAllowedRolesForPath(canonicalPath);
+  if (allowedRoles && !allowedRoles.includes(session.role)) {
+    const homePath = getHomePathForRole(session.role);
+    if (pathname !== homePath) {
+      return createRedirect(request, homePath);
+    }
   }
 
-  if (pathname.startsWith("/manager/") && userRole !== "manager") {
-    const signInUrl = new URL("/sign-in", request.url);
-    return NextResponse.redirect(signInUrl);
+  if (canonicalPath !== pathname) {
+    return createRedirect(request, canonicalPath);
   }
 
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: [
-    /*
-     * Match all request paths except for the ones starting with:
-     * - api (API routes)
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * - sign-in (auth page)
-     */
-    "/((?!api|_next/static|_next/image|favicon.ico|sign-in).*)",
-  ],
+  matcher: ["/((?!api|_next/static|_next/image|favicon.ico|.*\\..*).*)"],
 };

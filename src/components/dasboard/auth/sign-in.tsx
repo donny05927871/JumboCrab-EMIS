@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/card";
 import { Mail, Lock } from "lucide-react";
 import { signInUser } from "@/actions/auth/auth-action";
+import { getHomePathForRole, normalizeRole } from "@/lib/rbac";
 
 const SignInForm = () => {
   const [username, setUsername] = useState("");
@@ -31,9 +32,13 @@ const SignInForm = () => {
       const result = await signInUser({ username, password });
 
       if (result.success && result.user) {
-        // Use the role from the sign-in response
-        const userRole = result.user.role.toLowerCase();
-        router.push(`/${userRole}/dashboard`);
+        const role = normalizeRole(result.user.role);
+        if (!role) {
+          setError("Your account role is not recognized. Contact an admin.");
+          return;
+        }
+
+        router.push(getHomePathForRole(role));
         router.refresh(); // Ensure the page updates with the new auth state
       } else {
         setError(

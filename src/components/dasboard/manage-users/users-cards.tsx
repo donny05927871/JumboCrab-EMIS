@@ -5,6 +5,7 @@ import { UserWithEmployee } from "@/lib/validations/users";
 import { UsersActions } from "./users-actions";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 interface UsersCardsProps {
   users: UserWithEmployee[];
@@ -34,6 +35,16 @@ const formatJoinedDate = (value?: string | Date | null) => {
   return isNaN(date.getTime()) ? null : date.toLocaleDateString();
 };
 
+const getUserAvatar = (user: UserWithEmployee) =>
+  (user.image as string | null | undefined) || user.employee?.img || null;
+
+const getUserInitials = (user: UserWithEmployee) => {
+  const first = user.employee?.firstName?.charAt(0) ?? user.username?.charAt(0) ?? "";
+  const last = user.employee?.lastName?.charAt(0) ?? "";
+  const initials = `${first}${last}`.trim();
+  return initials ? initials.toUpperCase() : "U";
+};
+
 export function UsersCards({
   users,
   onEdit,
@@ -53,11 +64,18 @@ export function UsersCards({
             <CardHeader className="p-0 pb-3">
               <div className="flex justify-between items-start w-full gap-2">
                 <div className="flex items-center space-x-2 flex-1 min-w-0">
-                  <div className="w-12 h-12 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
-                    <span className="font-semibold text-base">
-                      {user.username?.charAt(0)?.toUpperCase() || "U"}
-                    </span>
-                  </div>
+                  <Avatar className="h-12 w-12 shrink-0">
+                    {getUserAvatar(user) && (
+                      <AvatarImage
+                        src={getUserAvatar(user) as string}
+                        alt={buildDisplayName(user)}
+                        className="object-cover"
+                      />
+                    )}
+                    <AvatarFallback className="bg-primary/10 text-primary font-semibold text-base">
+                      {getUserInitials(user)}
+                    </AvatarFallback>
+                  </Avatar>
                   <div className="min-w-0 flex-1">
                     <h3 className="text-base font-semibold text-foreground line-clamp-2">
                       {buildDisplayName(user)}

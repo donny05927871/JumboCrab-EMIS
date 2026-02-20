@@ -10,10 +10,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 
-interface PageProps {
-  params: { id: string };
-}
-
 function EmployeeEditPageContent({
   paramsPromise,
 }: {
@@ -88,9 +84,9 @@ function EmployeeEditPageContent({
   }
 
   return (
-    <div className="space-y-6 py-10 px-5 md:px-20">
+    <div className="px-4 py-8 sm:px-8 lg:px-12">
       <div className="flex justify-between items-start">
-        <div>
+        <div className="mb-6">
           <h3 className="text-lg font-medium">Edit Employee</h3>
           <p className="text-sm text-muted-foreground">
             Update employee details

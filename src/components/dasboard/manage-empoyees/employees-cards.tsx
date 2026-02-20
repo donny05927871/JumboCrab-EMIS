@@ -5,7 +5,7 @@ import {
   setEmployeeArchiveStatus,
 } from "@/actions/employees/employees-action";
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Employee } from "@/lib/validations/employees";
 import {
@@ -19,6 +19,31 @@ import {
 import { EmployeesActions } from "./employees-crud";
 import { Separator } from "@/components/ui/separator";
 import { useEmployees } from "./employees-provider";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+
+const getEmployeeInitials = (employee: Employee) => {
+  const first = employee.firstName?.charAt(0) ?? "";
+  const last = employee.lastName?.charAt(0) ?? "";
+  const initials = `${first}${last}`.trim();
+  return initials ? initials.toUpperCase() : "E";
+};
+
+function getEntityName(value: unknown, fallback: string) {
+  if (typeof value === "string") {
+    return value || fallback;
+  }
+
+  if (
+    value &&
+    typeof value === "object" &&
+    "name" in value &&
+    typeof value.name === "string"
+  ) {
+    return value.name || fallback;
+  }
+
+  return fallback;
+}
 
 export default function EmployeesCards({
   employees,
@@ -26,10 +51,12 @@ export default function EmployeesCards({
   employees: Employee[];
 }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const basePath = pathname.replace(/\/$/, "");
   const { refreshEmployees, showArchived } = useEmployees();
   // State for pagination
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(8);
+  const itemsPerPage = 8;
 
   // Handle view employee
   const handleViewEmployee = (employeeId: string | undefined) => {
@@ -37,7 +64,7 @@ export default function EmployeesCards({
       console.error("No employee ID provided for view");
       return;
     }
-    router.push(`/admin/employees/${employeeId}/view`);
+    router.push(`${basePath}/${employeeId}/view`);
   };
 
   // Handle edit employee
@@ -46,7 +73,7 @@ export default function EmployeesCards({
       console.error("No employee ID provided for edit");
       return;
     }
-    router.push(`/admin/employees/${employeeId}/edit`);
+    router.push(`${basePath}/${employeeId}/edit`);
   };
 
   // Handle archive employee
@@ -128,7 +155,7 @@ export default function EmployeesCards({
     const pageNumbers = [];
     const maxPageButtons = 5; // Maximum number of page buttons to show
     let startPage = Math.max(1, currentPage - Math.floor(maxPageButtons / 2));
-    let endPage = Math.min(startPage + maxPageButtons - 1, totalPages);
+    const endPage = Math.min(startPage + maxPageButtons - 1, totalPages);
 
     if (endPage - startPage + 1 < maxPageButtons) {
       startPage = Math.max(1, endPage - maxPageButtons + 1);
@@ -169,21 +196,27 @@ export default function EmployeesCards({
               {/* Header with Avatar and Name */}
               <div className="flex justify-between items-start w-full gap-2">
                 <div className="flex items-center space-x-2 flex-1 min-w-0">
-                  <div className="w-12 h-12 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
-                    <span className="font-semibold text-base">
-                      {employee.firstName?.charAt(0)}
-                      {employee.lastName?.charAt(0)}
-                    </span>
-                  </div>
+                  <Avatar className="h-12 w-12 shrink-0">
+                    {employee.img && (
+                      <AvatarImage
+                        src={employee.img}
+                        alt={`${employee.firstName ?? ""} ${
+                          employee.lastName ?? ""
+                        }`.trim()}
+                        className="object-cover"
+                      />
+                    )}
+                    <AvatarFallback className="bg-primary/10 text-primary font-semibold text-base">
+                      {getEmployeeInitials(employee)}
+                    </AvatarFallback>
+                  </Avatar>
                   {/* Name/position: allow two lines for name to avoid over-truncation */}
                   <div className="min-w-0 flex-1">
                     <h3 className="text-base font-semibold text-foreground line-clamp-2">
                       {employee.firstName} {employee.lastName}
                     </h3>
                     <p className="text-xs text-muted-foreground truncate">
-                      {typeof employee.position === "string"
-                        ? employee.position || "No position"
-                        : (employee.position as any)?.name || "No position"}
+                      {getEntityName(employee.position, "No position")}
                     </p>
                   </div>
                 </div>
@@ -226,7 +259,7 @@ export default function EmployeesCards({
                     </svg>
                     {typeof employee.department === "string"
                       ? employee.department || "No department"
-                      : (employee.department as any)?.name || "No department"}
+                      : getEntityName(employee.department, "No department")}
                   </div>
                   <div className="flex items-center">
                     <svg

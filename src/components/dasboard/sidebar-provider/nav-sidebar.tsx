@@ -128,22 +128,25 @@ const NavSidebar = ({ userRole }: NavSidebarProps) => {
         {
           label: "Users Directory",
           path: "",
-          roles: ["admin", "generalManager"],
+          roles: ["admin", "manager", "generalManager"],
         },
         {
           label: "Add User",
           path: "/create",
-          roles: ["admin", "generalManager"],
+          roles: ["admin", "manager", "generalManager"],
         },
       ],
-      roles: ["admin", "generalManager"],
+      roles: ["admin", "manager", "generalManager"],
     },
     {
       id: "employees",
       label: "Employees",
       icon: Users,
       href: `/${userRole}/employees`,
-      hasSubmenu: userRole === "admin" || userRole === "generalManager",
+      hasSubmenu:
+        userRole === "admin" ||
+        userRole === "generalManager" ||
+        userRole === "manager",
       // Subitems: add per-subitem roles (aligned with parent by default)
       subItems: [
         {

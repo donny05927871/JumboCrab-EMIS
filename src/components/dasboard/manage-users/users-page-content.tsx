@@ -36,7 +36,7 @@ export default function UsersPageContent() {
   const toggleDisable = async (user: any, isDisabled: boolean) => {
     if (!user?.userId) return;
     const confirmed = window.confirm(
-      `${isDisabled ? "Disable" : "Enable"} ${user.username}?`
+      `${isDisabled ? "Disable" : "Enable"} ${user.username}?`,
     );
     if (!confirmed) return;
     try {
@@ -57,7 +57,7 @@ export default function UsersPageContent() {
   const handleDelete = async (user: any) => {
     if (!user?.userId) return;
     const confirmed = window.confirm(
-      `Delete ${user.username}? This cannot be undone.`
+      `Delete ${user.username}? This cannot be undone.`,
     );
     if (!confirmed) return;
     try {
@@ -99,8 +99,8 @@ export default function UsersPageContent() {
   const managementUsers = activeUsers
     .filter((user) =>
       ["admin", "generalManager", "manager", "supervisor", "clerk"].includes(
-        user.role
-      )
+        user.role,
+      ),
     )
     .filter((user) => matchesTerm(user, managementSearch));
   const employeeUsers = activeUsers
@@ -128,7 +128,7 @@ export default function UsersPageContent() {
       </div>
 
       <div className="space-y-8 mt-6">
-        <section className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+        <section className="mt-6 bg-card text-card-foreground border border-border shadow-sm rounded-xl p-5">
           <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
               <p className="text-xs uppercase tracking-widest text-muted-foreground">
@@ -169,7 +169,7 @@ export default function UsersPageContent() {
           )}
         </section>
 
-        <section className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+        <section className="mt-6 bg-card text-card-foreground border border-border shadow-sm rounded-xl p-5">
           <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
               <p className="text-xs uppercase tracking-widest text-muted-foreground">
@@ -216,7 +216,7 @@ export default function UsersPageContent() {
               <p className="text-xs uppercase tracking-widest text-muted-foreground">
                 Status
               </p>
-              <h2 className="text-2xl font-semibold text-destructive">
+              <h2 className="text-2xl font-semibold text-destructive whitespace-nowrap">
                 Disabled Accounts
               </h2>
               <p className="text-sm text-muted-foreground">

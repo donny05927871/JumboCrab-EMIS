@@ -11,35 +11,6 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { getUserById } from "@/actions/users/users-action";
 import type { UserWithEmployee } from "@/lib/validations/users";
 
-class ErrorBoundary extends React.Component<
-  { children: React.ReactNode },
-  { hasError: boolean }
-> {
-  constructor(props: { children: React.ReactNode }) {
-    super(props);
-    this.state = { hasError: false };
-  }
-
-  static getDerivedStateFromError() {
-    return { hasError: true };
-  }
-
-  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    console.error("Error in UserViewPage:", error, errorInfo);
-  }
-
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div className="p-4 text-red-600">
-          Something went wrong. Please try again later.
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
-
 const InfoField = ({
   label,
   value,
@@ -77,6 +48,21 @@ const getInitials = (user?: UserWithEmployee | null) => {
   return initials || "U";
 };
 
+function getEntityName(value: unknown): string | null {
+  if (typeof value === "string") return value;
+
+  if (
+    value &&
+    typeof value === "object" &&
+    "name" in value &&
+    typeof (value as { name?: unknown }).name === "string"
+  ) {
+    return (value as { name: string }).name;
+  }
+
+  return null;
+}
+
 function UserViewPageContent({
   paramsPromise,
 }: {
@@ -106,7 +92,7 @@ function UserViewPageContent({
       } catch (err) {
         console.error("Error loading user:", err);
         setError(
-          err instanceof Error ? err.message : "Failed to load user data"
+          err instanceof Error ? err.message : "Failed to load user data",
         );
       } finally {
         setLoading(false);
@@ -149,162 +135,154 @@ function UserViewPageContent({
   );
 
   return (
-    <ErrorBoundary>
-      <div className="space-y-6 py-10 px-5 md:px-16 lg:px-24">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground">
-              Directory
-            </p>
-            <h1 className="text-3xl font-bold text-foreground">{displayName}</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              View user details and linked employee record
+    <div className="space-y-6 py-10 px-5 md:px-16 lg:px-24">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold text-foreground">{displayName}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            View user details and linked employee record
+          </p>
+        </div>
+        {user?.userId && (
+          <Button asChild variant="outline" className="gap-2">
+            <Link href={`/admin/users/${user.userId}/edit`}>
+              <Pencil className="h-4 w-4" />
+              Edit
+            </Link>
+          </Button>
+        )}
+      </div>
+
+      <Card className="rounded-2xl border border-border/70 bg-card/60 shadow-sm">
+        <div className="border-b border-border/70 px-6 py-5 flex items-center gap-4">
+          <Avatar className="h-14 w-14 ring-2 ring-primary/15">
+            {(user.image || user.employee?.img) && (
+              <AvatarImage
+                src={(user.image as string) || (user.employee?.img as string)}
+                alt={displayName}
+              />
+            )}
+            <AvatarFallback className="bg-primary/10 text-primary font-semibold uppercase">
+              {getInitials(user)}
+            </AvatarFallback>
+          </Avatar>
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-xl font-semibold leading-tight">
+                {displayName}
+              </h2>
+              <Badge variant="outline" className="text-xs capitalize">
+                {user.role}
+              </Badge>
+              {statusBadge}
+            </div>
+            <p className="text-sm text-muted-foreground truncate max-w-xl">
+              {user.email}
             </p>
           </div>
-          {user?.userId && (
-            <Button asChild variant="outline" className="gap-2">
-              <Link href={`/admin/users/${user.userId}/edit`}>
-                <Pencil className="h-4 w-4" />
-                Edit
+        </div>
+
+        <div className="px-6 py-5 space-y-6">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <InfoField label="Username" value={user.username} />
+            <InfoField label="Email" value={user.email} />
+            <InfoField
+              label="Role"
+              value={
+                <Badge variant="secondary" className="capitalize">
+                  {user.role}
+                </Badge>
+              }
+            />
+            <InfoField
+              label="Status"
+              value={user.isDisabled ? "Disabled" : "Active"}
+            />
+            <InfoField
+              label="Created"
+              value={formatDate(user.createdAt) ?? "—"}
+            />
+            <InfoField
+              label="Last Updated"
+              value={formatDate(user.updatedAt) ?? "—"}
+            />
+          </div>
+        </div>
+      </Card>
+
+      <Card className="rounded-2xl border border-border/70 bg-card/60 shadow-sm">
+        <div className="border-b border-border/70 px-6 py-4 flex items-center justify-between">
+          <div>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">
+              Linked Employee
+            </p>
+            <h3 className="text-lg font-semibold">Employee Details</h3>
+          </div>
+          {user.employee?.employeeId && (
+            <Button asChild variant="outline" size="sm">
+              <Link
+                href={`/admin/employees/${user.employee.employeeId}/view`}
+              >
+                View Employee Record
               </Link>
             </Button>
           )}
         </div>
 
-        <Card className="rounded-2xl border border-border/70 bg-card/60 shadow-sm">
-          <div className="border-b border-border/70 px-6 py-5 flex items-center gap-4">
-            <Avatar className="h-14 w-14 ring-2 ring-primary/15">
-              {(user.image || user.employee?.img) && (
-                <AvatarImage
-                  src={(user.image as string) || (user.employee?.img as string)}
-                  alt={displayName}
-                />
-              )}
-              <AvatarFallback className="bg-primary/10 text-primary font-semibold uppercase">
-                {getInitials(user)}
-              </AvatarFallback>
-            </Avatar>
-            <div className="flex flex-col gap-1">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h2 className="text-xl font-semibold leading-tight">
-                  {displayName}
-                </h2>
-                <Badge variant="outline" className="text-xs capitalize">
-                  {user.role}
-                </Badge>
-                {statusBadge}
-              </div>
-              <p className="text-sm text-muted-foreground truncate max-w-xl">
-                {user.email}
-              </p>
-            </div>
-          </div>
-
-          <div className="px-6 py-5 space-y-6">
+        {user.employee ? (
+          <div className="px-6 py-5 space-y-5">
             <div className="grid gap-4 sm:grid-cols-2">
-              <InfoField label="Username" value={user.username} />
-              <InfoField label="Email" value={user.email} />
               <InfoField
-                label="Role"
+                label="Name"
+                value={`${user.employee.firstName ?? ""} ${
+                  user.employee.lastName ?? ""
+                }`.trim()}
+              />
+              <InfoField
+                label="Employee Code"
+                value={user.employee.employeeCode}
+              />
+              <InfoField
+                label="Position"
+                value={getEntityName(user.employee.position) ?? "—"}
+              />
+              <InfoField
+                label="Department"
+                value={getEntityName(user.employee.department) ?? "—"}
+              />
+              <InfoField
+                label="Employment Status"
+                value={user.employee.employmentStatus}
+              />
+              <InfoField
+                label="Current Status"
                 value={
-                  <Badge variant="secondary" className="capitalize">
-                    {user.role}
-                  </Badge>
+                  user.employee.currentStatus
+                    ? user.employee.currentStatus.replace("_", " ")
+                    : "—"
                 }
               />
               <InfoField
-                label="Status"
-                value={user.isDisabled ? "Disabled" : "Active"}
+                label="Start Date"
+                value={formatDate(user.employee.startDate) ?? "—"}
               />
-              <InfoField
-                label="Created"
-                value={formatDate(user.createdAt) ?? "—"}
-              />
-              <InfoField
-                label="Last Updated"
-                value={formatDate(user.updatedAt) ?? "—"}
-              />
+              {user.employee.endDate && (
+                <InfoField
+                  label="End Date"
+                  value={formatDate(user.employee.endDate) ?? "—"}
+                />
+              )}
             </div>
           </div>
-        </Card>
-
-        <Card className="rounded-2xl border border-border/70 bg-card/60 shadow-sm">
-          <div className="border-b border-border/70 px-6 py-4 flex items-center justify-between">
-            <div>
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                Linked Employee
-              </p>
-              <h3 className="text-lg font-semibold">Employee Details</h3>
+        ) : (
+          <div className="px-6 py-5">
+            <div className="rounded-xl border border-dashed border-border/70 bg-muted/20 px-4 py-6 text-sm text-muted-foreground">
+              This user is not linked to an employee record.
             </div>
-            {user.employee?.employeeId && (
-              <Button asChild variant="outline" size="sm">
-                <Link href={`/admin/employees/${user.employee.employeeId}/view`}>
-                  View Employee Record
-                </Link>
-              </Button>
-            )}
           </div>
-
-          {user.employee ? (
-            <div className="px-6 py-5 space-y-5">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <InfoField
-                  label="Name"
-                  value={`${user.employee.firstName ?? ""} ${
-                    user.employee.lastName ?? ""
-                  }`.trim()}
-                />
-                <InfoField label="Employee Code" value={user.employee.employeeCode} />
-                <InfoField
-                  label="Position"
-                  value={
-                    typeof user.employee.position === "string"
-                      ? user.employee.position
-                      : (user.employee.position as any)?.name
-                  }
-                />
-                <InfoField
-                  label="Department"
-                  value={
-                    typeof user.employee.department === "string"
-                      ? user.employee.department
-                      : (user.employee.department as any)?.name
-                  }
-                />
-                <InfoField
-                  label="Employment Status"
-                  value={user.employee.employmentStatus}
-                />
-                <InfoField
-                  label="Current Status"
-                  value={
-                    user.employee.currentStatus
-                      ? user.employee.currentStatus.replace("_", " ")
-                      : "—"
-                  }
-                />
-                <InfoField
-                  label="Start Date"
-                  value={formatDate(user.employee.startDate) ?? "—"}
-                />
-                {user.employee.endDate && (
-                  <InfoField
-                    label="End Date"
-                    value={formatDate(user.employee.endDate) ?? "—"}
-                  />
-                )}
-              </div>
-            </div>
-          ) : (
-            <div className="px-6 py-5">
-              <div className="rounded-xl border border-dashed border-border/70 bg-muted/20 px-4 py-6 text-sm text-muted-foreground">
-                This user is not linked to an employee record.
-              </div>
-            </div>
-          )}
-        </Card>
-      </div>
-    </ErrorBoundary>
+        )}
+      </Card>
+    </div>
   );
 }
 

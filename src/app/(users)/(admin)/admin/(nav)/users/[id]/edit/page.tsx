@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Loader2, ArrowLeft, Save } from "lucide-react";
+import { Loader2, Save } from "lucide-react";
 import type { UserWithEmployee } from "@/lib/validations/users";
 import { getUserById, updateUser } from "@/actions/users/users-action";
 
@@ -72,6 +72,21 @@ const buildDisplayName = (user?: UserWithEmployee | null) => {
   return fullName || user?.username || "User";
 };
 
+function getEntityName(value: unknown): string | null {
+  if (typeof value === "string") return value;
+
+  if (
+    value &&
+    typeof value === "object" &&
+    "name" in value &&
+    typeof (value as { name?: unknown }).name === "string"
+  ) {
+    return (value as { name: string }).name;
+  }
+
+  return null;
+}
+
 export default function UserEditPage({
   params,
 }: {
@@ -102,7 +117,7 @@ export default function UserEditPage({
   const employeeName = useMemo(
     () =>
       `${user?.employee?.firstName ?? ""} ${user?.employee?.lastName ?? ""}`.trim(),
-    [user]
+    [user],
   );
 
   // Resolve params promise safely
@@ -209,16 +224,6 @@ export default function UserEditPage({
     <div className="space-y-6 py-10 px-5 md:px-16 lg:px-24">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <button
-            className="mb-3 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
-            onClick={() => router.back()}
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Back
-          </button>
-          <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground">
-            Directory
-          </p>
           <h1 className="text-3xl font-bold text-foreground">
             Edit {buildDisplayName(user)}
           </h1>
@@ -228,7 +233,9 @@ export default function UserEditPage({
         </div>
         {user?.userId && (
           <Button variant="outline" asChild>
-            <Link href={`/admin/users/${user.userId}/view`}>View profile</Link>
+            <Link href={`/admin/users/${user.userId}/view`}>
+              View profile
+            </Link>
           </Button>
         )}
       </div>
@@ -239,12 +246,14 @@ export default function UserEditPage({
             <Avatar className="h-12 w-12 ring-2 ring-primary/15">
               {(user?.image || user?.employee?.img) && (
                 <AvatarImage
-                  src={(user?.image as string) || (user?.employee?.img as string)}
+                  src={
+                    (user?.image as string) || (user?.employee?.img as string)
+                  }
                   alt={buildDisplayName(user)}
                 />
               )}
               <AvatarFallback className="bg-primary/10 text-primary font-semibold uppercase">
-                {user ? user.username?.[0] ?? "U" : "U"}
+                {user ? (user.username?.[0] ?? "U") : "U"}
               </AvatarFallback>
             </Avatar>
             <div>
@@ -308,18 +317,27 @@ export default function UserEditPage({
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder="Leave blank to keep current password"
                     />
-                    <Button type="button" variant="outline" onClick={generateTempPassword}>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={generateTempPassword}
+                    >
                       Generate
                     </Button>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Leave blank to keep current password. Use Generate to create a temporary one.
+                    Leave blank to keep current password. Use Generate to create
+                    a temporary one.
                   </p>
                 </Field>
               </div>
 
               <div className="flex flex-wrap gap-3 justify-end">
-                <Button type="button" variant="outline" onClick={() => router.back()}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => router.back()}
+                >
                   Cancel
                 </Button>
                 <Button type="submit" disabled={saving}>
@@ -347,27 +365,29 @@ export default function UserEditPage({
                   </span>
                 </div>
                 <div className="grid gap-3">
-                  <InfoField label="Employee Code" value={user.employee.employeeCode} />
+                  <InfoField
+                    label="Employee Code"
+                    value={user.employee.employeeCode}
+                  />
                   <InfoField
                     label="Position"
-                  value={
-                    typeof user.employee.position === "string"
-                      ? user.employee.position
-                      : (user.employee.position as any)?.name
-                  }
-                />
-                <InfoField
-                  label="Department"
-                  value={
-                    typeof user.employee.department === "string"
-                      ? user.employee.department
-                      : (user.employee.department as any)?.name
-                  }
-                />
+                    value={getEntityName(user.employee.position) ?? "—"}
+                  />
+                  <InfoField
+                    label="Department"
+                    value={getEntityName(user.employee.department) ?? "—"}
+                  />
                 </div>
                 {user.employee.employeeId && (
-                  <Button asChild variant="outline" size="sm" className="w-full">
-                    <Link href={`/admin/employees/${user.employee.employeeId}/view`}>
+                  <Button
+                    asChild
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                  >
+                    <Link
+                      href={`/admin/employees/${user.employee.employeeId}/view`}
+                    >
                       View employee record
                     </Link>
                   </Button>

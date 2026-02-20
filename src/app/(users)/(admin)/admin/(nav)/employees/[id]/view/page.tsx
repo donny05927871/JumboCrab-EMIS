@@ -21,7 +21,7 @@ export default async function EmployeeViewPage({
   }
 
   return (
-    <div className="container mx-auto py-10">
+    <div className="px-4 py-8 sm:px-8 lg:px-12">
       <div className="flex justify-between items-start">
         <div>
           <h3 className="text-lg font-medium">View Employee</h3>

@@ -44,7 +44,7 @@ const AppSidebar = () => {
                 ? user.username.charAt(0).toUpperCase() + user.username.slice(1)
                 : "User",
             email: user?.email || "",
-            avatar: "",
+            avatar: employee?.img || null,
           }}
         />
       </SidebarFooter>

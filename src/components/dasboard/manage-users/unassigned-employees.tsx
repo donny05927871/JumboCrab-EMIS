@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { getEmployeesWithoutUser } from "@/actions/employees/employees-action";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,8 +14,27 @@ type UnassignedEmployee = {
   email: string | null;
 };
 
+function getUsersBasePath(pathname: string): string {
+  const segments = pathname.split("/").filter(Boolean);
+  const usersIndex = segments.indexOf("users");
+
+  if (usersIndex === -1) {
+    return "/admin/users";
+  }
+
+  return `/${segments.slice(0, usersIndex + 1).join("/")}`;
+}
+
+function getRoleBasePath(pathname: string): string {
+  const [roleSegment] = pathname.split("/").filter(Boolean);
+  return roleSegment ? `/${roleSegment}` : "/admin";
+}
+
 export function UnassignedEmployees() {
   const router = useRouter();
+  const pathname = usePathname();
+  const usersBasePath = useMemo(() => getUsersBasePath(pathname), [pathname]);
+  const roleBasePath = useMemo(() => getRoleBasePath(pathname), [pathname]);
   const [employees, setEmployees] = useState<UnassignedEmployee[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
@@ -51,11 +70,11 @@ export function UnassignedEmployees() {
   }, [employees, search]);
 
   const handleCreate = (employeeId: string) => {
-    router.push(`/admin/users/create?employeeId=${employeeId}`);
+    router.push(`${usersBasePath}/create?employeeId=${employeeId}`);
   };
 
   const handleViewEmployee = (employeeId: string) => {
-    router.push(`/admin/employees/${employeeId}/view`);
+    router.push(`${roleBasePath}/employees/${employeeId}/view`);
   };
 
   return (

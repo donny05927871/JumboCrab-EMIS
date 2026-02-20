@@ -1,9 +1,9 @@
 "use client";
 
-import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import {
   CURRENT_STATUS,
   EMPLOYMENT_STATUS,
@@ -13,7 +13,7 @@ import {
 } from "@/lib/validations/employees";
 import { useCallback, useState, useEffect, useMemo } from "react";
 import { Pencil, Trash2 } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { listDepartmentOptions } from "@/actions/organization/departments-action";
 import {
   createEmployee,
@@ -29,7 +29,7 @@ import {
 
 const ensureOption = (
   options: readonly string[],
-  current?: string | null
+  current?: string | null,
 ): string[] => {
   const list = Array.from(options);
   if (current && !list.includes(current)) {
@@ -37,6 +37,14 @@ const ensureOption = (
   }
   return list;
 };
+
+const ACCEPTED_IMAGE_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+];
+const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
 
 // Helper component to display form field errors
 const FormError = ({ message }: { message?: string }) => {
@@ -55,12 +63,28 @@ type EmployeeFormProps = {
   initialData?: Partial<Employee> | null;
 };
 
+function getEmployeesBasePath(pathname: string): string {
+  const segments = pathname.split("/").filter(Boolean);
+  const employeesIndex = segments.indexOf("employees");
+
+  if (employeesIndex === -1) {
+    return "/admin/employees";
+  }
+
+  return `/${segments.slice(0, employeesIndex + 1).join("/")}`;
+}
+
 export default function EmployeeForm({
   employeeId,
   mode,
   initialData = null,
 }: EmployeeFormProps) {
   const router = useRouter();
+  const pathname = usePathname();
+  const employeesBasePath = useMemo(
+    () => getEmployeesBasePath(pathname),
+    [pathname],
+  );
   const [formData, setFormData] = useState<Partial<Employee>>(() => {
     if (initialData) {
       return {
@@ -98,16 +122,17 @@ export default function EmployeeForm({
   });
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isImageUploading, setIsImageUploading] = useState(false);
+  const [isImageModalOpen, setIsImageModalOpen] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [shouldRemoveImage, setShouldRemoveImage] = useState(false);
 
   const nationalityOptions = ensureOption(
     NATIONALITIES,
-    formData.nationality || null
+    formData.nationality || null,
   );
   const emergencyRelationshipOptions = ensureOption(
     EMERGENCY_RELATIONSHIPS,
-    formData.emergencyContactRelationship || null
+    formData.emergencyContactRelationship || null,
   );
   const [departments, setDepartments] = useState<
     { departmentId: string; name: string }[]
@@ -230,7 +255,7 @@ export default function EmployeeForm({
     handleSelectChange("positionId", "");
   };
 
-  const validateField = (name: string, value: any) => {
+  const validateField = (name: string, value: unknown) => {
     // Create a temporary object with the new value
     const tempData = { ...formData, [name]: value };
 
@@ -249,7 +274,7 @@ export default function EmployeeForm({
     if (!result.success) {
       // Find the error for this specific field
       const fieldError = result.error.issues.find(
-        (issue) => issue.path[0] === name
+        (issue) => issue.path[0] === name,
       );
 
       // Update errors state
@@ -277,7 +302,7 @@ export default function EmployeeForm({
   };
 
   const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
   ) => {
     if (mode === "view") return; // Prevent changes in view mode
 
@@ -333,17 +358,69 @@ export default function EmployeeForm({
     validateField(name as string, value);
   };
 
-  // Helper function to format field names for display
-  const formatFieldName = (field: string) => {
-    return field
-      .replace(/([A-Z])/g, " $1")
-      .replace(/^./, (str) => str.toUpperCase())
-      .trim();
+  const uploadEmployeeImage = async (file: File) => {
+    if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
+      setErrors((prev) => ({
+        ...prev,
+        img: "Invalid image type. Use JPG, PNG, WEBP, or GIF.",
+      }));
+      return;
+    }
+
+    if (file.size > MAX_IMAGE_SIZE_BYTES) {
+      setErrors((prev) => ({
+        ...prev,
+        img: "Image must be 5 MB or smaller.",
+      }));
+      return;
+    }
+
+    setIsImageUploading(true);
+    setErrors((prev) => {
+      const next = { ...prev };
+      delete next.img;
+      return next;
+    });
+
+    try {
+      const body = new FormData();
+      body.append("file", file);
+
+      const response = await fetch("/api/uploads/employee-photo", {
+        method: "POST",
+        body,
+      });
+      const payload = await response.json().catch(() => null);
+
+      if (!response.ok || typeof payload?.url !== "string") {
+        throw new Error(payload?.error || "Failed to upload image");
+      }
+
+      setFormData((prev) => ({
+        ...prev,
+        img: payload.url,
+      }));
+      validateField("img", payload.url);
+    } catch (error) {
+      setErrors((prev) => ({
+        ...prev,
+        img: error instanceof Error ? error.message : "Failed to upload image",
+      }));
+    } finally {
+      setIsImageUploading(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (mode === "view") return; // Prevent form submission in view mode
+    if (isImageUploading) {
+      setErrors((prev) => ({
+        ...prev,
+        img: "Please wait for the image upload to finish.",
+      }));
+      return;
+    }
 
     // Prepare form data for submission
     const submissionData = {
@@ -394,19 +471,21 @@ export default function EmployeeForm({
 
       if (mode === "create") {
         console.log("Creating new employee with data:", submissionData);
-        result = await createEmployee(submissionData as any);
+        result = await createEmployee(
+          submissionData as Parameters<typeof createEmployee>[0],
+        );
         console.log("Create employee result:", result);
       } else if (employeeId) {
         console.log(
           "Updating employee with ID:",
           employeeId,
           "Data:",
-          submissionData
+          submissionData,
         );
         result = await updateEmployee({
           ...submissionData,
           employeeId: employeeId, // Changed from 'id' to 'employeeId'
-        } as any);
+        } as Parameters<typeof updateEmployee>[0]);
         console.log("Update employee result:", result);
       } else {
         const error = "Employee ID is required for update";
@@ -420,11 +499,11 @@ export default function EmployeeForm({
 
       // Show success message
       alert(
-        `Employee ${mode === "create" ? "created" : "updated"} successfully!`
+        `Employee ${mode === "create" ? "created" : "updated"} successfully!`,
       );
 
       // Redirect back to employees list
-      router.push("/admin/employees");
+      router.push(employeesBasePath);
       router.refresh();
     } catch (error) {
       console.error("Error saving employee:", error);
@@ -459,13 +538,28 @@ export default function EmployeeForm({
             </h4>
             <div className="flex justify-center">
               <div className="relative">
-                <div className="h-32 w-32 rounded-full overflow-hidden border border-border bg-muted">
-                  <img
-                    src={formData.img || "/default-avatar.png"}
-                    alt={formData.firstName || "Profile"}
-                    className="h-full w-full object-cover"
-                  />
-                </div>
+                {mode === "view" && formData.img ? (
+                  <button
+                    type="button"
+                    className="h-32 w-32 rounded-full overflow-hidden border border-border bg-muted cursor-zoom-in focus:outline-none focus:ring-2 focus:ring-ring"
+                    onClick={() => setIsImageModalOpen(true)}
+                    aria-label="View profile image"
+                  >
+                    <img
+                      src={formData.img}
+                      alt={formData.firstName || "Profile"}
+                      className="h-full w-full object-cover"
+                    />
+                  </button>
+                ) : (
+                  <div className="h-32 w-32 rounded-full overflow-hidden border border-border bg-muted">
+                    <img
+                      src={formData.img || "/default-avatar.png"}
+                      alt={formData.firstName || "Profile"}
+                      className="h-full w-full object-cover"
+                    />
+                  </div>
+                )}
                 {mode !== "view" && (
                   <>
                     <input
@@ -473,19 +567,13 @@ export default function EmployeeForm({
                       type="file"
                       accept="image/*"
                       className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
+                      onChange={async (e) => {
+                        const input = e.currentTarget;
+                        const file = input.files?.[0];
                         if (file) {
-                          const reader = new FileReader();
-                          reader.onload = (event) => {
-                            setFormData((prev) => ({
-                              ...prev,
-                              img: event.target?.result as string,
-                            }));
-                            setShouldRemoveImage(false); // Reset removal flag when new image is selected
-                          };
-                          reader.readAsDataURL(file);
+                          await uploadEmployeeImage(file);
                         }
+                        input.value = "";
                       }}
                     />
                     <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-card/90 backdrop-blur-sm rounded-full border border-border px-2 py-1 shadow-sm">
@@ -493,6 +581,7 @@ export default function EmployeeForm({
                         type="button"
                         variant="ghost"
                         size="icon"
+                        disabled={isImageUploading}
                         className="h-7 w-7 text-foreground hover:text-foreground"
                         onClick={() =>
                           document.getElementById("image-upload")?.click()
@@ -506,6 +595,7 @@ export default function EmployeeForm({
                           type="button"
                           variant="ghost"
                           size="icon"
+                          disabled={isImageUploading}
                           className="h-7 w-7 text-destructive hover:text-destructive/80"
                           onClick={() => {
                             setFormData((prev) => ({ ...prev, img: null }));
@@ -520,6 +610,31 @@ export default function EmployeeForm({
                 )}
               </div>
             </div>
+            {mode !== "view" && (
+              <div className="text-center">
+                {isImageUploading && (
+                  <p className="text-xs text-muted-foreground">Uploading...</p>
+                )}
+                <FormError message={errors.img} />
+              </div>
+            )}
+            {mode === "view" && formData.img && (
+              <Dialog
+                open={isImageModalOpen}
+                onOpenChange={setIsImageModalOpen}
+              >
+                <DialogContent className="max-w-3xl p-2">
+                  <DialogTitle className="sr-only">
+                    Employee profile image
+                  </DialogTitle>
+                  <img
+                    src={formData.img}
+                    alt={formData.firstName || "Profile"}
+                    className="w-full max-h-[80vh] object-contain rounded-md"
+                  />
+                </DialogContent>
+              </Dialog>
+            )}
           </div>
 
           {/* ========== PERSONAL INFORMATION SECTION ========== */}
@@ -1008,8 +1123,9 @@ export default function EmployeeForm({
               </Label>
               {mode === "view" ? (
                 <div className="min-h-[40px] px-3 py-2 bg-muted rounded-md border border-border flex items-center text-sm text-foreground w-full">
-                  {departments.find((d) => d.departmentId === formData.departmentId)
-                    ?.name || "-"}
+                  {departments.find(
+                    (d) => d.departmentId === formData.departmentId,
+                  )?.name || "-"}
                 </div>
               ) : (
                 <div className="w-full">
@@ -1017,9 +1133,13 @@ export default function EmployeeForm({
                     id="departmentId"
                     name="departmentId"
                     value={formData.departmentId || ""}
-                    onChange={(e) => handleDepartmentChange(e.target.value || "")}
+                    onChange={(e) =>
+                      handleDepartmentChange(e.target.value || "")
+                    }
                     className={`w-full h-10 px-3 py-2 rounded-md border ${
-                      errors.departmentId ? "border-destructive" : "border-border"
+                      errors.departmentId
+                        ? "border-destructive"
+                        : "border-border"
                     } bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-ring`}
                   >
                     <option value="">Select department</option>
@@ -1057,11 +1177,16 @@ export default function EmployeeForm({
                     className={`w-full h-10 px-3 py-2 rounded-md border ${
                       errors.positionId ? "border-destructive" : "border-border"
                     } bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-ring`}
-                    disabled={!filteredPositions.length && !!formData.departmentId}
+                    disabled={
+                      !filteredPositions.length && !!formData.departmentId
+                    }
                   >
                     <option value="">Select position</option>
                     {filteredPositions.map((position) => (
-                      <option key={position.positionId} value={position.positionId}>
+                      <option
+                        key={position.positionId}
+                        value={position.positionId}
+                      >
                         {position.name}
                       </option>
                     ))}
@@ -1181,7 +1306,8 @@ export default function EmployeeForm({
                       {status
                         .split("_")
                         .map(
-                          (word) => word.charAt(0) + word.slice(1).toLowerCase()
+                          (word) =>
+                            word.charAt(0) + word.slice(1).toLowerCase(),
                         )
                         .join(" ")}
                     </option>
@@ -1240,7 +1366,7 @@ export default function EmployeeForm({
                     onChange={(e) =>
                       handleSelectChange(
                         "emergencyContactRelationship",
-                        e.target.value
+                        e.target.value,
                       )
                     }
                     className={`w-full h-10 px-3 py-2 rounded-md border ${
@@ -1318,12 +1444,12 @@ export default function EmployeeForm({
           Cancel
         </Button>
         {mode !== "view" && (
-          <Button type="submit" disabled={isSubmitting}>
+          <Button type="submit" disabled={isSubmitting || isImageUploading}>
             {isSubmitting
               ? "Saving..."
               : mode === "create"
-              ? "Create Employee"
-              : "Save Changes"}
+                ? "Create Employee"
+                : "Save Changes"}
           </Button>
         )}
       </div>

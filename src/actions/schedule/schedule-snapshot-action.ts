@@ -2,7 +2,7 @@
 
 import { db } from "@/lib/db";
 import { getDailySchedule } from "@/lib/schedule";
-import { serializePattern, serializeShift } from "@/lib/serializers/schedule";
+import { serializeShift } from "@/lib/serializers/schedule";
 import { shiftSelect } from "./schedule-shared";
 
 export async function getScheduleSnapshot(dateParam?: string) {
@@ -12,29 +12,13 @@ export async function getScheduleSnapshot(dateParam?: string) {
       return { success: false, error: "Invalid date" };
     }
 
-    const [schedule, patterns, shifts] = await Promise.all([
+    const [schedule, shifts] = await Promise.all([
       getDailySchedule(date),
-      db.weeklyPattern.findMany({
-        where: {
-          isActive: true,
-          code: {
-            not: {
-              startsWith: "OVR-",
-            },
-          },
-        },
-        orderBy: { name: "asc" },
-        include: {
-          sunShift: { select: shiftSelect },
-          monShift: { select: shiftSelect },
-          tueShift: { select: shiftSelect },
-          wedShift: { select: shiftSelect },
-          thuShift: { select: shiftSelect },
-          friShift: { select: shiftSelect },
-          satShift: { select: shiftSelect },
-        },
+      db.shift.findMany({
+        where: { isActive: true },
+        orderBy: [{ isDayOff: "asc" }, { name: "asc" }],
+        select: shiftSelect,
       }),
-      db.shift.findMany({ orderBy: { name: "asc" }, select: shiftSelect }),
     ]);
 
     const normalizedSchedule = schedule.map((entry) => ({
@@ -49,7 +33,6 @@ export async function getScheduleSnapshot(dateParam?: string) {
       success: true,
       date: date.toISOString(),
       schedule: normalizedSchedule,
-      patterns: patterns.map((pattern) => serializePattern(pattern)),
       shifts: shifts.map((shift) => serializeShift(shift)),
     };
   } catch (error) {

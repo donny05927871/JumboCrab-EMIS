@@ -1,6 +1,11 @@
 "use server";
 
 import { ATTENDANCE_STATUS } from "@prisma/client";
+import {
+  addDays,
+  endOfMonth,
+  startOfMonth,
+} from "date-fns";
 import { db } from "@/lib/db";
 import { getExpectedShiftForDate } from "@/lib/attendance";
 import { serializeShift } from "@/lib/serializers/schedule";
@@ -11,6 +16,16 @@ import {
   zonedNow,
 } from "@/lib/timezone";
 import { toTzDateKey } from "./schedule-shared";
+
+function buildDateRangeDays(start: Date, end: Date) {
+  const days: Date[] = [];
+  let cursor = new Date(start);
+  while (cursor <= end) {
+    days.push(new Date(cursor));
+    cursor = addDays(cursor, 1);
+  }
+  return days;
+}
 
 export async function getEmployeeMonthSchedule(input: {
   employeeId: string;
@@ -42,22 +57,45 @@ export async function getEmployeeMonthSchedule(input: {
     const anchorInTz = new Date(
       anchorDate.toLocaleString("en-US", { timeZone: TZ }),
     );
-    const year = anchorInTz.getFullYear();
-    const monthIndex = anchorInTz.getMonth();
-    const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+    const monthStartLocal = startOfMonth(anchorInTz);
+    const monthEndLocal = endOfMonth(anchorInTz);
 
-    const monthDates = Array.from({ length: daysInMonth }, (_, index) =>
-      new Date(Date.UTC(year, monthIndex, index + 1, 12, 0, 0)),
+    const monthDates = buildDateRangeDays(
+      new Date(
+        Date.UTC(
+          monthStartLocal.getFullYear(),
+          monthStartLocal.getMonth(),
+          monthStartLocal.getDate(),
+          12,
+          0,
+          0,
+        ),
+      ),
+      new Date(
+        Date.UTC(
+          monthEndLocal.getFullYear(),
+          monthEndLocal.getMonth(),
+          monthEndLocal.getDate(),
+          12,
+          0,
+          0,
+        ),
+      ),
     );
     const monthStart = startOfZonedDay(monthDates[0]);
     const monthEnd = endOfZonedDay(monthDates[monthDates.length - 1]);
+    const today = zonedNow();
+    const todayStart = startOfZonedDay(today);
+    const todayEnd = endOfZonedDay(today);
+    const leaveQueryStart = todayStart < monthStart ? todayStart : monthStart;
+    const leaveQueryEnd = todayEnd > monthEnd ? todayEnd : monthEnd;
 
     const leaveAttendances = await db.attendance.findMany({
       where: {
         employeeId,
         workDate: {
-          gte: monthStart,
-          lt: monthEnd,
+          gte: leaveQueryStart,
+          lt: leaveQueryEnd,
         },
         status: ATTENDANCE_STATUS.LEAVE,
       },
@@ -84,24 +122,26 @@ export async function getEmployeeMonthSchedule(input: {
       ]),
     );
 
-    const days = await Promise.all(
-      monthDates.map(async (date) => {
-        const expected = await getExpectedShiftForDate(employeeId, date);
-        return {
-          date: toTzDateKey(date),
-          shift: expected.shift ? serializeShift(expected.shift) : null,
-          source: expected.source,
-          leave: leaveByDate.get(toTzDateKey(date)) ?? null,
-          scheduledStartMinutes: expected.scheduledStartMinutes,
-          scheduledEndMinutes: expected.scheduledEndMinutes,
-        };
-      }),
-    );
+    const buildDay = async (date: Date) => {
+      const expected = await getExpectedShiftForDate(employeeId, date);
+      return {
+        date: toTzDateKey(date),
+        shift: expected.shift ? serializeShift(expected.shift) : null,
+        source: expected.source,
+        leave: leaveByDate.get(toTzDateKey(date)) ?? null,
+        scheduledStartMinutes: expected.scheduledStartMinutes,
+        scheduledEndMinutes: expected.scheduledEndMinutes,
+      };
+    };
+
+    const days = await Promise.all(monthDates.map(buildDay));
+    const todayDay = await buildDay(today);
 
     return {
       success: true,
-      month: `${year}-${String(monthIndex + 1).padStart(2, "0")}`,
+      month: `${monthStartLocal.getFullYear()}-${String(monthStartLocal.getMonth() + 1).padStart(2, "0")}`,
       days,
+      todayDay,
     };
   } catch (error) {
     console.error("Failed to fetch employee month schedule", error);

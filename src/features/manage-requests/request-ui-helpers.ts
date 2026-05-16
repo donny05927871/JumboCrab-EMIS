@@ -119,9 +119,9 @@ export const requestTypeLabel = (
     case "LEAVE":
       return "Leave";
     case "DAY_OFF":
-      return "Day Off";
+      return "Change Day Off";
     case "SCHEDULE_CHANGE":
-      return "Schedule Change";
+      return "Change Shift";
     case "SCHEDULE_SWAP":
       return "Schedule Swap";
     case "CASH_ADVANCE":
@@ -132,14 +132,10 @@ export const requestTypeLabel = (
 
 export const leaveTypeLabel = (type: LeaveRequestType) => {
   switch (type) {
-    case "VACATION":
-      return "Vacation leave";
     case "SICK":
       return "Sick leave";
-    case "PERSONAL":
-      return "Personal leave";
-    case "EMERGENCY":
-      return "Emergency leave";
+    case "SIL":
+      return "Service Incentive Leave";
     case "UNPAID":
       return "Unpaid leave";
     default:

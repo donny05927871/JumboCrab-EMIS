@@ -1,4 +1,4 @@
-import type { Shift, WeeklyPattern } from "@prisma/client";
+import type { Shift } from "@prisma/client";
 
 type ShiftRecord = Pick<
   Shift,
@@ -13,6 +13,8 @@ type ShiftRecord = Pick<
   | "breakMinutesUnpaid"
   | "paidHoursPerDay"
   | "notes"
+  | "colorHex"
+  | "isDayOff"
 >;
 
 const toStringOrZero = (value: unknown) => {
@@ -37,6 +39,8 @@ export type SerializedShift = {
   breakMinutesUnpaid: number;
   paidHoursPerDay: string;
   notes: string | null;
+  colorHex: string | null;
+  isDayOff: boolean;
 };
 
 export function serializeShift(shift: ShiftRecord): SerializedShift;
@@ -57,35 +61,7 @@ export function serializeShift(shift: ShiftRecord | null) {
     breakMinutesUnpaid: shift.breakMinutesUnpaid,
     paidHoursPerDay: toStringOrZero(shift.paidHoursPerDay),
     notes: shift.notes ?? null,
+    colorHex: shift.colorHex ?? null,
+    isDayOff: shift.isDayOff,
   };
 }
-
-type PatternWithShifts = WeeklyPattern & {
-  sunShift?: ShiftRecord | null;
-  monShift?: ShiftRecord | null;
-  tueShift?: ShiftRecord | null;
-  wedShift?: ShiftRecord | null;
-  thuShift?: ShiftRecord | null;
-  friShift?: ShiftRecord | null;
-  satShift?: ShiftRecord | null;
-};
-
-export const serializePattern = (pattern: PatternWithShifts) => ({
-  id: pattern.id,
-  code: pattern.code,
-  name: pattern.name,
-  sunShiftId: pattern.sunShiftId ?? null,
-  monShiftId: pattern.monShiftId ?? null,
-  tueShiftId: pattern.tueShiftId ?? null,
-  wedShiftId: pattern.wedShiftId ?? null,
-  thuShiftId: pattern.thuShiftId ?? null,
-  friShiftId: pattern.friShiftId ?? null,
-  satShiftId: pattern.satShiftId ?? null,
-  sunShift: pattern.sunShift ? serializeShift(pattern.sunShift) : null,
-  monShift: pattern.monShift ? serializeShift(pattern.monShift) : null,
-  tueShift: pattern.tueShift ? serializeShift(pattern.tueShift) : null,
-  wedShift: pattern.wedShift ? serializeShift(pattern.wedShift) : null,
-  thuShift: pattern.thuShift ? serializeShift(pattern.thuShift) : null,
-  friShift: pattern.friShift ? serializeShift(pattern.friShift) : null,
-  satShift: pattern.satShift ? serializeShift(pattern.satShift) : null,
-});

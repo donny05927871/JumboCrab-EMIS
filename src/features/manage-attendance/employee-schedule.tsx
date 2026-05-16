@@ -1,7 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { format, getDay, parse, startOfWeek } from "date-fns";
+import {
+  endOfMonth,
+  format,
+  getDay,
+  isAfter,
+  isBefore,
+  parse,
+  startOfMonth,
+  startOfWeek,
+} from "date-fns";
 import { enUS } from "date-fns/locale";
 import {
   Calendar as BigCalendar,
@@ -9,14 +18,32 @@ import {
   dateFnsLocalizer,
   type SlotInfo,
 } from "react-big-calendar";
-import { CalendarDays, Clock3, Sparkles } from "lucide-react";
+import {
+  CalendarDays,
+  Clock3,
+  Settings2,
+  Sparkles,
+} from "lucide-react";
 import { getEmployeeMonthSchedule } from "@/actions/schedule/schedule-action";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   InlineLoadingState,
   ModuleLoadingState,
 } from "@/components/loading/loading-states";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { useSession } from "@/hooks/use-session";
 import { TZ } from "@/lib/timezone";
 import { cn } from "@/lib/utils";
@@ -27,6 +54,8 @@ type EmployeeMonthScheduleDay = {
     id: number;
     code: string;
     name: string;
+    colorHex?: string | null;
+    isDayOff?: boolean;
     startMinutes: number;
     endMinutes: number;
     spansMidnight: boolean;
@@ -36,7 +65,7 @@ type EmployeeMonthScheduleDay = {
     paidHoursPerDay: string;
     notes: string | null;
   } | null;
-  source: "override" | "pattern" | "none";
+  source: "override" | "weekly_schedule" | "none";
   leave: {
     requestId: string | null;
     leaveType: "VACATION" | "SICK" | "PERSONAL" | "EMERGENCY" | "UNPAID";
@@ -63,7 +92,7 @@ const locales = { "en-US": enUS };
 const localizer = dateFnsLocalizer({
   format,
   parse,
-  startOfWeek: (date: Date) => startOfWeek(date, { weekStartsOn: 0 }),
+  startOfWeek: (date: Date) => startOfWeek(date, { weekStartsOn: 1 }),
   getDay,
   locales,
 });
@@ -112,7 +141,7 @@ const formatLongDate = (value: string) =>
 
 const sourceLabelMap: Record<EmployeeMonthScheduleDay["source"], string> = {
   override: "Manual override",
-  pattern: "Pattern schedule",
+  weekly_schedule: "Weekly schedule",
   none: "No source",
 };
 
@@ -127,41 +156,66 @@ const leaveTypeLabelMap: Record<
   UNPAID: "Unpaid leave",
 };
 
+const shiftCalendarStyle = (shift?: EmployeeMonthScheduleDay["shift"] | null) =>
+  shift?.colorHex
+    ? {
+        borderColor: shift.colorHex,
+        backgroundColor: `${shift.colorHex}1A`,
+        color: shift.colorHex,
+      }
+    : undefined;
+
+const monthNameFormatter = new Intl.DateTimeFormat(undefined, {
+  timeZone: TZ,
+  month: "long",
+});
+
+const buildYearOptions = (centerYear: number, span = 5) =>
+  Array.from({ length: span * 2 + 1 }, (_, index) => centerYear - span + index);
+
+const monthOptions = Array.from({ length: 12 }, (_, monthIndex) => ({
+  value: String(monthIndex),
+  label: monthNameFormatter.format(new Date(2026, monthIndex, 1)),
+}));
+
+const sourceBadgeClassName = (source: EmployeeMonthScheduleDay["source"]) =>
+  source === "override"
+    ? "employee-schedule-status-badge--override"
+    : "employee-schedule-status-badge--neutral";
+
 const EmployeeScedule = () => {
   const { user, employee, loading, error } = useSession();
-  const currentMonth = useMemo(() => {
+  const initialMonth = useMemo(() => {
     const now = getNowInTz();
     return new Date(now.getFullYear(), now.getMonth(), 1);
   }, []);
-  const endOfCurrentMonth = useMemo(
-    () =>
-      new Date(
-        currentMonth.getFullYear(),
-        currentMonth.getMonth() + 1,
-        0,
-        23,
-        59,
-        59,
-        999,
-      ),
-    [currentMonth],
-  );
+  const [viewedMonth, setViewedMonth] = useState<Date>(initialMonth);
   const currentMonthAnchor = useMemo(
-    () => toIsoDate(currentMonth),
-    [currentMonth],
+    () => toIsoDate(viewedMonth),
+    [viewedMonth],
   );
   const currentMonthLabel = useMemo(
     () =>
-      currentMonth.toLocaleDateString(undefined, {
+      viewedMonth.toLocaleDateString(undefined, {
         timeZone: TZ,
         month: "long",
         year: "numeric",
       }),
-    [currentMonth],
+    [viewedMonth],
   );
+  const yearOptions = useMemo(
+    () => buildYearOptions(viewedMonth.getFullYear()),
+    [viewedMonth],
+  );
+  const viewedMonthStart = useMemo(() => startOfMonth(viewedMonth), [viewedMonth]);
+  const viewedMonthEnd = useMemo(() => endOfMonth(viewedMonth), [viewedMonth]);
 
   const [selectedDate, setSelectedDate] = useState<Date>(() => getNowInTz());
   const [days, setDays] = useState<EmployeeMonthScheduleDay[]>([]);
+  const [todayDay, setTodayDay] = useState<EmployeeMonthScheduleDay | null>(
+    null,
+  );
+  const [monthPickerOpen, setMonthPickerOpen] = useState(false);
   const [monthLoading, setMonthLoading] = useState(false);
   const [monthError, setMonthError] = useState<string | null>(null);
   const [hasLoadedMonth, setHasLoadedMonth] = useState(false);
@@ -189,6 +243,9 @@ const EmployeeScedule = () => {
         }
         if (!mounted) return;
         setDays((result.days ?? []) as EmployeeMonthScheduleDay[]);
+        setTodayDay(
+          (result.todayDay ?? null) as EmployeeMonthScheduleDay | null,
+        );
       } catch (err) {
         if (!mounted) return;
         setMonthError(
@@ -208,6 +265,16 @@ const EmployeeScedule = () => {
     };
   }, [employee?.employeeId, currentMonthAnchor]);
 
+  useEffect(() => {
+    if (isBefore(selectedDate, viewedMonthStart)) {
+      setSelectedDate(viewedMonthStart);
+      return;
+    }
+    if (isAfter(selectedDate, viewedMonthEnd)) {
+      setSelectedDate(viewedMonthEnd);
+    }
+  }, [selectedDate, viewedMonthEnd, viewedMonthStart]);
+
   const daysByDate = useMemo(() => {
     const map = new Map<string, EmployeeMonthScheduleDay>();
     days.forEach((day) => {
@@ -221,7 +288,7 @@ const EmployeeScedule = () => {
     [selectedDate],
   );
   const selectedDay = daysByDate.get(selectedDateKey);
-  const todaySchedule = daysByDate.get(todayKey);
+  const todaySchedule = daysByDate.get(todayKey) ?? todayDay ?? undefined;
 
   const DaySquareEvent = ({ event }: CalendarEventRendererProps) => {
     const day = event.resource;
@@ -231,13 +298,13 @@ const EmployeeScedule = () => {
     return (
       <div className="employee-day-event">
         <p className="employee-day-event-code">
-          {leave ? "LEAVE" : (shift?.code ?? "REST")}
+          {leave ? "LEAVE" : (shift?.code ?? "No shift yet")}
         </p>
         <p className="employee-day-event-time hidden sm:block">
           {leave
             ? `${leave.isPaidLeave ? "Paid" : "Unpaid"} · ${leaveTypeLabelMap[leave.leaveType]}`
             : !shift
-              ? "No shift"
+              ? ""
               : `${formatMinutes(day.scheduledStartMinutes)} - ${formatMinutes(
                   day.scheduledEndMinutes,
                 )}`}
@@ -249,10 +316,11 @@ const EmployeeScedule = () => {
   const stats = useMemo(() => {
     const summary = {
       workDays: 0,
+      dayOffDays: 0,
       leaveDays: 0,
       paidLeaveDays: 0,
       paidSickLeaveDays: 0,
-      restDays: 0,
+      noShiftDays: 0,
       overrides: 0,
     };
     days.forEach((day) => {
@@ -265,10 +333,12 @@ const EmployeeScedule = () => {
             summary.paidLeaveDays += 1;
           }
         }
+      } else if (day.shift?.isDayOff) {
+        summary.dayOffDays += 1;
       } else if (day.shift) {
         summary.workDays += 1;
       } else {
-        summary.restDays += 1;
+        summary.noShiftDays += 1;
       }
       if (day.source === "override") {
         summary.overrides += 1;
@@ -344,23 +414,15 @@ const EmployeeScedule = () => {
     [days],
   );
 
-  const clampToCurrentMonth = (date: Date) => {
-    if (date < currentMonth) return currentMonth;
-    if (date > endOfCurrentMonth) return endOfCurrentMonth;
+  const clampToViewedMonth = (date: Date) => {
+    if (date < viewedMonthStart) return viewedMonthStart;
+    if (date > viewedMonthEnd) return viewedMonthEnd;
     return date;
   };
 
   const handleSelectSlot = (slotInfo: SlotInfo) => {
-    setSelectedDate(clampToCurrentMonth(slotInfo.start));
+    setSelectedDate(clampToViewedMonth(slotInfo.start));
   };
-
-  const displayName =
-    [employee?.firstName, employee?.lastName]
-      .filter(Boolean)
-      .join(" ")
-      .trim() ||
-    user?.username ||
-    "Employee";
 
   if (loading) {
     return (
@@ -382,81 +444,184 @@ const EmployeeScedule = () => {
   }
 
   return (
-    <div className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-      <div className="rounded-3xl border border-border/60 bg-card p-6 shadow-sm sm:p-8">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="space-y-1">
-            <p className="inline-flex items-center gap-2 text-xs font-medium uppercase tracking-[0.14em] text-primary">
+    <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+      <div className="rounded-2xl border border-border/60 bg-card px-4 py-3 shadow-sm sm:px-5">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0 space-y-1">
+            <p className="inline-flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
               <Sparkles className="h-3.5 w-3.5" />
               Employee Schedule
             </p>
-            <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-              {currentMonthLabel}
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              Select any date to inspect the shift details for that day.
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="text-2xl font-semibold tracking-tight">
+                {currentMonthLabel}
+              </div>
+              <Popover open={monthPickerOpen} onOpenChange={setMonthPickerOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="h-10 w-10 rounded-xl shrink-0"
+                    aria-label="Customize month"
+                  >
+                    <Settings2 className="h-4 w-4" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="start" className="w-[18rem] rounded-2xl p-4">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm font-medium">Choose month</p>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 rounded-lg"
+                        onClick={() => {
+                          const now = getNowInTz();
+                          setViewedMonth(
+                            new Date(
+                              now.getFullYear(),
+                              now.getMonth(),
+                              1,
+                              12,
+                              0,
+                              0,
+                              0,
+                            ),
+                          );
+                          setMonthPickerOpen(false);
+                        }}
+                      >
+                        Current month
+                      </Button>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Select
+                        value={String(viewedMonth.getMonth())}
+                        onValueChange={(value) => {
+                          const nextMonth = Number(value);
+                          if (Number.isNaN(nextMonth)) return;
+                          setViewedMonth(
+                            new Date(
+                              viewedMonth.getFullYear(),
+                              nextMonth,
+                              1,
+                              12,
+                              0,
+                              0,
+                              0,
+                            ),
+                          );
+                        }}
+                      >
+                        <SelectTrigger className="h-10 rounded-xl">
+                          <SelectValue placeholder={currentMonthLabel} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {monthOptions.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Select
+                        value={String(viewedMonth.getFullYear())}
+                        onValueChange={(value) => {
+                          const nextYear = Number(value);
+                          if (Number.isNaN(nextYear)) return;
+                          setViewedMonth(
+                            new Date(
+                              nextYear,
+                              viewedMonth.getMonth(),
+                              1,
+                              12,
+                              0,
+                              0,
+                              0,
+                            ),
+                          );
+                        }}
+                      >
+                        <SelectTrigger className="h-10 rounded-xl">
+                          <SelectValue placeholder={String(viewedMonth.getFullYear())} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {yearOptions.map((year) => (
+                            <SelectItem key={year} value={String(year)}>
+                              {year}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </PopoverContent>
+              </Popover>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Use customize to switch months.
             </p>
           </div>
-          <div className="grid w-full grid-cols-2 gap-2 sm:w-auto sm:grid-cols-3 xl:grid-cols-6 sm:gap-3">
-            <div className="rounded-xl border border-border/60 bg-background/70 px-3 py-2 text-center">
-              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
+            <div className="rounded-xl border border-border/60 bg-background/60 px-3 py-2">
+              <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
                 Work
               </p>
-              <p className="text-lg font-semibold">{stats.workDays}</p>
+              <p className="mt-1 text-lg font-semibold leading-none">{stats.workDays}</p>
             </div>
-            <div className="rounded-xl border border-border/60 bg-background/70 px-3 py-2 text-center">
-              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+            <div className="rounded-xl border border-border/60 bg-background/60 px-3 py-2">
+              <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
+                Day Off
+              </p>
+              <p className="mt-1 text-lg font-semibold leading-none">{stats.dayOffDays}</p>
+            </div>
+            <div className="rounded-xl border border-border/60 bg-background/60 px-3 py-2">
+              <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
                 Leave
               </p>
-              <p className="text-lg font-semibold">{stats.leaveDays}</p>
-            </div>
-            <div className="rounded-xl border border-border/60 bg-background/70 px-3 py-2 text-center">
-              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                Paid Leave
+              <p className="mt-1 text-lg font-semibold leading-none">{stats.leaveDays}</p>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Paid {stats.paidLeaveDays} · Sick {stats.paidSickLeaveDays}
               </p>
-              <p className="text-lg font-semibold">{stats.paidLeaveDays}</p>
             </div>
-            <div className="rounded-xl border border-border/60 bg-background/70 px-3 py-2 text-center">
-              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                Paid Sick
+            <div className="rounded-xl border border-border/60 bg-background/60 px-3 py-2">
+              <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
+                No shift yet
               </p>
-              <p className="text-lg font-semibold">{stats.paidSickLeaveDays}</p>
+              <p className="mt-1 text-lg font-semibold leading-none">{stats.noShiftDays}</p>
             </div>
-            <div className="rounded-xl border border-border/60 bg-background/70 px-3 py-2 text-center">
-              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                Rest
+            <div className="rounded-xl border border-border/60 bg-background/60 px-3 py-2">
+              <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
+                Overrides
               </p>
-              <p className="text-lg font-semibold">{stats.restDays}</p>
-            </div>
-            <div className="rounded-xl border border-border/60 bg-background/70 px-3 py-2 text-center">
-              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                Override
-              </p>
-              <p className="text-lg font-semibold">{stats.overrides}</p>
+              <p className="mt-1 text-lg font-semibold leading-none">{stats.overrides}</p>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="mt-6 grid gap-6 md:grid-cols-[minmax(0,1fr)_20rem]">
+      <div className="mt-5 grid gap-5 md:grid-cols-[minmax(0,1fr)_18rem] xl:grid-cols-[minmax(0,1fr)_19rem]">
         <Card className="order-2 min-w-0 border-border/60 bg-card/80 shadow-md backdrop-blur-sm md:order-1">
           <CardHeader className="space-y-2 border-b border-border/60 bg-muted/20">
-            <CardTitle className="inline-flex items-center gap-2 text-lg">
-              <CalendarDays className="h-4 w-4 text-primary" />
-              Schedule Calendar
-            </CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Month-only calendar with modern card layout and highlighted
-              schedule sources.
-            </p>
+            <div className="space-y-2">
+              <CardTitle className="inline-flex items-center gap-2 text-lg">
+                <CalendarDays className="h-4 w-4 text-muted-foreground" />
+                Schedule Calendar
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Month view with current-month schedule cards only.
+              </p>
+            </div>
           </CardHeader>
           <CardContent className="space-y-4 p-4 sm:p-5">
-            <div className="employee-schedule-calendar employee-schedule-calendar--modern h-[620px] w-full overflow-x-auto overflow-y-hidden rounded-2xl border sm:h-[760px] lg:h-[960px]">
+            <div className="employee-schedule-calendar employee-schedule-calendar--modern h-[600px] w-full overflow-x-auto overflow-y-hidden rounded-2xl border sm:h-[700px] lg:h-[860px]">
               {/* CALENDAR UI */}
               <BigCalendar<ScheduleCalendarEvent>
                 localizer={localizer}
                 events={calendarEvents}
-                date={currentMonth}
+                date={viewedMonth}
                 view={Views.MONTH}
                 views={[Views.MONTH]}
                 drilldownView={Views.MONTH}
@@ -468,11 +633,8 @@ const EmployeeScedule = () => {
                 }}
                 onSelectSlot={handleSelectSlot}
                 onSelectEvent={(event) =>
-                  setSelectedDate(clampToCurrentMonth(event.start))
+                  setSelectedDate(clampToViewedMonth(event.start))
                 }
-                // I keep the day background subtle and use it as the quick monthly cue.
-                // This lets me explain at a glance whether a date came from the regular pattern,
-                // a manual override, or a leave state without competing with the event card itself.
                 dayPropGetter={(date) => {
                   const dayKey = toIsoDate(date);
                   const dayInfo = daysByDate.get(dayKey);
@@ -480,23 +642,19 @@ const EmployeeScedule = () => {
                     className: cn(
                       dayKey === selectedDateKey && "rbc-selected-day",
                       dayKey === todayKey && "rbc-focus-today",
-                      dayInfo?.source === "pattern" &&
-                        dayInfo?.shift &&
-                        !dayInfo?.leave &&
-                        "rbc-pattern-day",
-                      dayInfo?.source === "override" &&
-                        !dayInfo?.leave &&
-                        "rbc-override-day",
                       dayInfo?.leave?.isPaidLeave && "rbc-paid-leave-day",
                       dayInfo?.leave &&
                         !dayInfo.leave.isPaidLeave &&
                         "rbc-unpaid-leave-day",
                     ),
+                    style:
+                      dayInfo?.shift?.colorHex && !dayInfo?.leave
+                        ? {
+                            backgroundColor: `${dayInfo.shift.colorHex}0D`,
+                          }
+                        : undefined,
                   };
                 }}
-                // I reserve the stronger event styling for the main story of the day:
-                // shift, leave, or rest. If a day is overridden, I layer that meaning only
-                // on shifts so leave still reads as the highest priority state.
                 eventPropGetter={(event) => ({
                   className: cn(
                     event.resource.leave
@@ -505,61 +663,19 @@ const EmployeeScedule = () => {
                         ? "rbc-shift-event"
                         : "rbc-rest-event",
                     event.resource.leave?.isPaidLeave && "rbc-paid-leave-event",
-                    event.resource.source === "override" &&
-                      !event.resource.leave &&
-                      "rbc-override-event",
                   ),
+                  style:
+                    event.resource.shift && !event.resource.leave
+                      ? {
+                          borderColor: event.resource.shift.colorHex ?? undefined,
+                          backgroundColor: event.resource.shift.colorHex
+                            ? `${event.resource.shift.colorHex}1A`
+                            : undefined,
+                          color: event.resource.shift.colorHex ?? undefined,
+                        }
+                      : undefined,
                 })}
               />
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-xl border bg-muted/20 p-3">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                  Selected Date
-                </p>
-                <p className="mt-1 text-sm font-medium">
-                  {selectedDay
-                    ? formatLongDate(selectedDay.date)
-                    : "No date selected"}
-                </p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {selectedDay?.leave
-                    ? `${leaveTypeLabelMap[selectedDay.leave.leaveType]} · ${selectedDay.leave.isPaidLeave ? "Paid" : "Unpaid"}`
-                    : selectedDay?.shift
-                      ? `${selectedDay.shift.name} · ${formatMinutes(
-                          selectedDay.scheduledStartMinutes,
-                        )} - ${formatMinutes(selectedDay.scheduledEndMinutes)}`
-                      : "No shift scheduled"}
-                </p>
-              </div>
-              <div className="rounded-xl border bg-muted/20 p-3">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                  Legend
-                </p>
-                <div className="mt-2 space-y-1.5 text-xs text-muted-foreground">
-                  <p>
-                    <span className="employee-schedule-legend-dot employee-schedule-legend-dot--pattern" />
-                    Pattern shift
-                  </p>
-                  <p>
-                    <span className="employee-schedule-legend-dot employee-schedule-legend-dot--override" />
-                    Manual override
-                  </p>
-                  <p>
-                    <span className="employee-schedule-legend-dot employee-schedule-legend-dot--paid-leave" />
-                    Paid leave
-                  </p>
-                  <p>
-                    <span className="employee-schedule-legend-dot employee-schedule-legend-dot--unpaid-leave" />
-                    Unpaid leave
-                  </p>
-                  <p>
-                    <span className="employee-schedule-legend-dot employee-schedule-legend-dot--rest" />
-                    Rest day
-                  </p>
-                </div>
-              </div>
             </div>
 
             {monthLoading && (
@@ -579,10 +695,9 @@ const EmployeeScedule = () => {
           <Card className="border-border/60 bg-card shadow-md">
             <CardHeader>
               <CardTitle className="inline-flex items-center gap-2 text-lg">
-                <Clock3 className="h-4 w-4 text-primary" />
+                <Clock3 className="h-4 w-4 text-muted-foreground" />
                 Today&apos;s Schedule
               </CardTitle>
-              <p className="text-sm text-muted-foreground">{displayName}</p>
             </CardHeader>
             <CardContent className="space-y-3">
               {monthLoading ? (
@@ -631,7 +746,7 @@ const EmployeeScedule = () => {
                 </>
               ) : !todaySchedule?.shift ? (
                 <p className="text-sm text-muted-foreground">
-                  No shift scheduled for today.
+                  No shift yet.
                 </p>
               ) : (
                 <>
@@ -649,22 +764,52 @@ const EmployeeScedule = () => {
                   </div>
                   <Badge
                     variant="outline"
+                    style={shiftCalendarStyle(todaySchedule.shift)}
                     className={cn(
-                      // I treat this as a source badge, so I color it by where the schedule
-                      // came from: regular pattern, manual override, or no assigned shift.
                       "employee-schedule-status-badge",
-                      todaySchedule.source === "pattern" &&
-                        "employee-schedule-status-badge--pattern",
-                      todaySchedule.source === "override" &&
-                        "employee-schedule-status-badge--override",
-                      todaySchedule.source === "none" &&
-                        "employee-schedule-status-badge--rest",
+                      sourceBadgeClassName(todaySchedule.source),
                     )}
                   >
-                    {sourceLabelMap[todaySchedule.source]}
+                    {todaySchedule.shift.code} · {sourceLabelMap[todaySchedule.source]}
                   </Badge>
                 </>
               )}
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/60 bg-card shadow-md">
+            <CardHeader>
+              <CardTitle className="text-lg">Selected Date</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-sm font-medium">
+                {selectedDay ? formatLongDate(selectedDay.date) : "No date selected"}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                {selectedDay?.leave
+                  ? `${leaveTypeLabelMap[selectedDay.leave.leaveType]} · ${selectedDay.leave.isPaidLeave ? "Paid" : "Unpaid"}`
+                  : selectedDay?.shift
+                    ? `${selectedDay.shift.name} · ${formatMinutes(
+                        selectedDay.scheduledStartMinutes,
+                      )} - ${formatMinutes(selectedDay.scheduledEndMinutes)}`
+                    : "No shift yet"}
+              </p>
+              {selectedDay?.shift ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="outline" style={shiftCalendarStyle(selectedDay.shift)}>
+                    {selectedDay.shift.code}
+                  </Badge>
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      "employee-schedule-status-badge",
+                      sourceBadgeClassName(selectedDay.source),
+                    )}
+                  >
+                    {sourceLabelMap[selectedDay.source]}
+                  </Badge>
+                </div>
+              ) : null}
             </CardContent>
           </Card>
         </div>

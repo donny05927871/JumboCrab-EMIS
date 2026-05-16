@@ -68,6 +68,7 @@ export const loadAttendanceListContext = async ({
         select: {
           id: true,
           name: true,
+          isDayOff: true,
           startMinutes: true,
           endMinutes: true,
           breakStartMinutes: true,
@@ -154,7 +155,8 @@ export const enrichAttendanceRecords = ({
     const { breakCount, breakMinutes, breakStartAt, breakEndAt } =
       computeBreakStats(punches);
 
-    const expectedShift = record.expectedShift ?? null;
+    const expectedShift =
+      record.expectedShift && !record.expectedShift.isDayOff ? record.expectedShift : null;
     const expectedStart = record.scheduledStartMinutes ?? null;
     const expectedEnd = record.scheduledEndMinutes ?? null;
     const scheduledBreakMinutes = expectedShift?.breakMinutesUnpaid ?? null;
@@ -457,7 +459,7 @@ export const buildSingleDayAttendanceList = async ({
     return {
       id: `placeholder-${employee.employeeId}-${startLabel}`,
       workDate: dayStart.toISOString(),
-      status: expected?.shift
+      status: expected?.shift && !expected.shift.isDayOff
         ? ATTENDANCE_STATUS.ABSENT
         : ATTENDANCE_STATUS.REST,
       expectedShiftId,

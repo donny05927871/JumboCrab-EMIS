@@ -40,10 +40,32 @@ const computeBreakAndPaid = (
   return { breakMinutes, paidHours, totalMinutes };
 };
 
+const normalizeColorHex = (value: string | null | undefined) => {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return /^#([0-9a-fA-F]{6})$/.test(trimmed) ? trimmed.toUpperCase() : "__INVALID__";
+};
+
+const ensureSingleDayOffShift = async (shiftId?: number) => {
+  const existing = await db.shift.findFirst({
+    where: {
+      isDayOff: true,
+      ...(shiftId ? { id: { not: shiftId } } : {}),
+    },
+    select: { id: true },
+  });
+  if (existing) {
+    throw new Error("Only one Day Off shift can exist");
+  }
+};
+
 const shiftSelect = {
   id: true,
   code: true,
   name: true,
+  colorHex: true,
+  isDayOff: true,
   startMinutes: true,
   endMinutes: true,
   spansMidnight: true,
@@ -57,7 +79,8 @@ const shiftSelect = {
 export async function listShifts() {
   try {
     const shifts = await db.shift.findMany({
-      orderBy: { name: "asc" },
+      where: { isActive: true },
+      orderBy: [{ isDayOff: "asc" }, { startMinutes: "asc" }, { name: "asc" }],
       select: shiftSelect,
     });
     return { success: true, data: shifts.map((s) => serializeShift(s)) };
@@ -76,45 +99,62 @@ export async function createShift(input: {
   breakStartTime?: string | null;
   breakEndTime?: string | null;
   notes?: string | null;
+  colorHex?: string | null;
+  isDayOff?: boolean;
 }) {
   try {
-    const code = typeof input.code === "string" ? input.code.trim() : "";
-    const name = typeof input.name === "string" ? input.name.trim() : "";
-    const startMinutes = parseTimeToMinutes(input.startTime);
-    const endMinutes = parseTimeToMinutes(input.endTime);
-    const spansMidnight = Boolean(input.spansMidnight);
-    const breakStartMinutes = parseTimeToMinutes(input.breakStartTime);
-    const breakEndMinutes = parseTimeToMinutes(input.breakEndTime);
+    const isDayOff = Boolean(input.isDayOff);
+    const code = (typeof input.code === "string" ? input.code.trim() : "") || (isDayOff ? "OFF" : "");
+    const name =
+      (typeof input.name === "string" ? input.name.trim() : "") || (isDayOff ? "Day Off" : "");
+    const startMinutes = isDayOff ? 0 : parseTimeToMinutes(input.startTime);
+    const endMinutes = isDayOff ? 0 : parseTimeToMinutes(input.endTime);
+    const spansMidnight = isDayOff ? false : Boolean(input.spansMidnight);
+    const breakStartMinutes = isDayOff ? null : parseTimeToMinutes(input.breakStartTime);
+    const breakEndMinutes = isDayOff ? null : parseTimeToMinutes(input.breakEndTime);
     const notes =
       typeof input.notes === "string" ? input.notes.trim() : null;
+    const colorHex = normalizeColorHex(input.colorHex);
 
     if (!code || !name) {
       return { success: false, error: "code and name are required" };
     }
-    if (startMinutes == null || endMinutes == null) {
+    if (colorHex === "__INVALID__") {
+      return { success: false, error: "colorHex must be a valid #RRGGBB value" };
+    }
+    if (!isDayOff && (startMinutes == null || endMinutes == null)) {
       return { success: false, error: "startTime and endTime must be HH:mm" };
     }
-    if (!spansMidnight && endMinutes <= startMinutes) {
+    const safeStartMinutes = startMinutes ?? 0;
+    const safeEndMinutes = endMinutes ?? 0;
+    if (!isDayOff && !spansMidnight && safeEndMinutes <= safeStartMinutes) {
       return {
         success: false,
         error: "endTime must be after startTime unless spansMidnight is true",
       };
     }
+    if (isDayOff) {
+      await ensureSingleDayOffShift();
+    }
 
-    const derived = computeBreakAndPaid(
-      startMinutes,
-      endMinutes,
-      spansMidnight,
-      breakStartMinutes,
-      breakEndMinutes
-    );
+    const derived = isDayOff
+      ? { breakMinutes: 0, paidHours: 0, totalMinutes: 0 }
+      : computeBreakAndPaid(
+          safeStartMinutes,
+          safeEndMinutes,
+          spansMidnight,
+          breakStartMinutes,
+          breakEndMinutes
+        );
 
     const shift = await db.shift.create({
       data: {
         code,
         name,
-        startMinutes,
-        endMinutes,
+        colorHex: colorHex === "__INVALID__" ? null : colorHex,
+        isDayOff,
+        startMinutes: safeStartMinutes,
+        endMinutes: safeEndMinutes,
         spansMidnight,
         breakStartMinutes,
         breakEndMinutes,
@@ -128,7 +168,10 @@ export async function createShift(input: {
     return { success: true, data: serializeShift(shift) };
   } catch (error) {
     console.error("Failed to create shift", error);
-    return { success: false, error: "Failed to create shift" };
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to create shift",
+    };
   }
 }
 
@@ -142,6 +185,8 @@ export async function updateShift(input: {
   breakStartTime?: string | null;
   breakEndTime?: string | null;
   notes?: string | null;
+  colorHex?: string | null;
+  isDayOff?: boolean;
 }) {
   try {
     const id = typeof input.id === "number" ? input.id : null;
@@ -155,60 +200,92 @@ export async function updateShift(input: {
     }
 
     const code =
-      typeof input.code === "string" && input.code.trim()
+      (typeof input.code === "string" && input.code.trim()
         ? input.code.trim()
-        : existing.code;
+        : existing.code) || "OFF";
     const name =
-      typeof input.name === "string" && input.name.trim()
+      (typeof input.name === "string" && input.name.trim()
         ? input.name.trim()
-        : existing.name;
+        : existing.name) || "Day Off";
+    const isDayOff =
+      typeof input.isDayOff === "boolean" ? input.isDayOff : existing.isDayOff;
     const startMinutes =
-      input.startTime != null ? parseTimeToMinutes(input.startTime) : existing.startMinutes;
+      isDayOff
+        ? 0
+        : input.startTime != null
+          ? parseTimeToMinutes(input.startTime)
+          : existing.startMinutes;
     const endMinutes =
-      input.endTime != null ? parseTimeToMinutes(input.endTime) : existing.endMinutes;
+      isDayOff
+        ? 0
+        : input.endTime != null
+          ? parseTimeToMinutes(input.endTime)
+          : existing.endMinutes;
     const spansMidnight =
-      typeof input.spansMidnight === "boolean"
+      isDayOff
+        ? false
+        : typeof input.spansMidnight === "boolean"
         ? input.spansMidnight
         : existing.spansMidnight;
     const breakStartMinutes =
-      input.breakStartTime != null
+      isDayOff
+        ? null
+        : input.breakStartTime != null
         ? parseTimeToMinutes(input.breakStartTime)
         : existing.breakStartMinutes;
     const breakEndMinutes =
-      input.breakEndTime != null
+      isDayOff
+        ? null
+        : input.breakEndTime != null
         ? parseTimeToMinutes(input.breakEndTime)
         : existing.breakEndMinutes;
     const notes =
       typeof input.notes === "string" ? input.notes.trim() : existing.notes ?? null;
+    const colorHex =
+      input.colorHex !== undefined
+        ? normalizeColorHex(input.colorHex)
+        : existing.colorHex ?? null;
 
     if (!code || !name) {
       return { success: false, error: "code and name are required" };
     }
-    if (startMinutes == null || endMinutes == null) {
+    if (colorHex === "__INVALID__") {
+      return { success: false, error: "colorHex must be a valid #RRGGBB value" };
+    }
+    if (!isDayOff && (startMinutes == null || endMinutes == null)) {
       return { success: false, error: "startTime and endTime must be HH:mm" };
     }
-    if (!spansMidnight && endMinutes <= startMinutes) {
+    const safeStartMinutes = startMinutes ?? 0;
+    const safeEndMinutes = endMinutes ?? 0;
+    if (!isDayOff && !spansMidnight && safeEndMinutes <= safeStartMinutes) {
       return {
         success: false,
         error: "endTime must be after startTime unless spansMidnight is true",
       };
     }
+    if (isDayOff) {
+      await ensureSingleDayOffShift(id);
+    }
 
-    const derived = computeBreakAndPaid(
-      startMinutes,
-      endMinutes,
-      spansMidnight,
-      breakStartMinutes,
-      breakEndMinutes
-    );
+    const derived = isDayOff
+      ? { breakMinutes: 0, paidHours: 0, totalMinutes: 0 }
+      : computeBreakAndPaid(
+          safeStartMinutes,
+          safeEndMinutes,
+          spansMidnight,
+          breakStartMinutes,
+          breakEndMinutes
+        );
 
     const shift = await db.shift.update({
       where: { id },
       data: {
         code,
         name,
-        startMinutes,
-        endMinutes,
+        colorHex: colorHex === "__INVALID__" ? null : colorHex,
+        isDayOff,
+        startMinutes: safeStartMinutes,
+        endMinutes: safeEndMinutes,
         spansMidnight,
         breakStartMinutes,
         breakEndMinutes,
@@ -222,7 +299,10 @@ export async function updateShift(input: {
     return { success: true, data: serializeShift(shift) };
   } catch (error) {
     console.error("Failed to update shift", error);
-    return { success: false, error: "Failed to update shift" };
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to update shift",
+    };
   }
 }
 
@@ -235,10 +315,19 @@ export async function deleteShift(id: number) {
     if (!existing) {
       return { success: false, error: "Shift not found" };
     }
-    await db.shift.delete({ where: { id } });
+    if (!existing.isActive) {
+      return { success: true };
+    }
+    await db.shift.update({
+      where: { id },
+      data: { isActive: false },
+    });
     return { success: true };
   } catch (error) {
-    console.error("Failed to delete shift", error);
-    return { success: false, error: "Failed to delete shift" };
+    console.error("Failed to archive shift", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to archive shift",
+    };
   }
 }

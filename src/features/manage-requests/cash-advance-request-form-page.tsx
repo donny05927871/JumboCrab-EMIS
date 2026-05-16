@@ -1,44 +1,67 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
+import {
+  addMonths,
+  eachDayOfInterval,
+  endOfMonth,
+  endOfWeek,
+  isBefore,
+  isSameMonth,
+  startOfMonth,
+  startOfWeek,
+} from "date-fns";
+import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import { LeaveRequestType } from "@prisma/client";
 import {
   createCashAdvanceRequest,
   createDayOffRequest,
   createLeaveRequest,
-  getDayOffPreview,
-  getScheduleChangePreview,
   createScheduleChangeRequest,
   createScheduleSwapRequest,
-  listScheduleChangeShifts,
+  getDayOffPreview,
+  getEmployeeLeaveBalanceSummary,
+  getScheduleChangePreview,
   getScheduleSwapPreview,
   listEmployeesForScheduleSwap,
+  listScheduleChangeShifts,
   type DayOffPreview,
+  type EmployeeLeaveBalanceSummary,
   type ScheduleChangePreview,
   type ScheduleChangeShiftOption,
   type ScheduleSwapEmployeeOption,
   type ScheduleSwapPreview,
 } from "@/actions/requests/requests-action";
+import { getEmployeeMonthSchedule } from "@/actions/schedule/schedule-action";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/components/ui/toast-provider";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectSeparator,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useSession } from "@/hooks/use-session";
+import { TZ } from "@/lib/timezone";
+import { cn } from "@/lib/utils";
 import {
   countDaysInclusive,
+  formatDate,
   formatDateRange,
   formatMoney,
   leaveTypeLabel,
   requestTypeLabel,
 } from "@/features/manage-requests/request-ui-helpers";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { useToast } from "@/components/ui/toast-provider";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 
 type RequestType =
   | "CASH_ADVANCE"
@@ -51,405 +74,588 @@ type RequestFormPageProps = {
   lockedRequestType?: RequestType;
 };
 
-const toDateInputValue = (date: Date) => date.toISOString().slice(0, 10);
+type CashAdvanceStartOption = {
+  value: string;
+  title: string;
+  subtitle: string;
+};
 
-const leaveTypeOptions: LeaveRequestType[] = [
-  "VACATION",
-  "SICK",
-  "PERSONAL",
-  "EMERGENCY",
-  "UNPAID",
+const REQUEST_TYPE_GROUPS: Array<{
+  label: string;
+  options: RequestType[];
+}> = [
+  { label: "Time off", options: ["LEAVE"] },
+  {
+    label: "Schedule",
+    options: ["DAY_OFF", "SCHEDULE_CHANGE", "SCHEDULE_SWAP"],
+  },
+  { label: "Finance", options: ["CASH_ADVANCE"] },
 ];
+
+const REQUEST_TYPE_DESCRIPTIONS: Record<RequestType, string> = {
+  LEAVE: "Book continuous leave dates, review remaining credits, and send for approval.",
+  DAY_OFF: "Move an off day to another workday by picking source and target dates.",
+  SCHEDULE_CHANGE:
+    "Request a shift replacement across one day or a selected range of workdays.",
+  SCHEDULE_SWAP:
+    "Pick one scheduled workday, then request a same-date swap with a coworker.",
+  CASH_ADVANCE:
+    "Request an advance amount now. Approved requests deduct on payroll review.",
+};
+
+const buildUpcomingBimonthlyStartOptions = (): CashAdvanceStartOption[] => {
+  const nowInTz = new Date(new Date().toLocaleString("en-US", { timeZone: TZ }));
+  const today = new Date(Date.UTC(
+    nowInTz.getFullYear(),
+    nowInTz.getMonth(),
+    nowInTz.getDate(),
+    12,
+    0,
+    0,
+  ));
+
+  const options: CashAdvanceStartOption[] = [];
+
+  for (let monthOffset = 0; monthOffset < 4 && options.length < 4; monthOffset += 1) {
+    const baseYear = nowInTz.getFullYear();
+    const baseMonth = nowInTz.getMonth() + monthOffset;
+    const year = baseYear + Math.floor(baseMonth / 12);
+    const month = ((baseMonth % 12) + 12) % 12;
+    const lastDay = new Date(year, month + 1, 0).getDate();
+
+    const makeDate = (day: number) => new Date(Date.UTC(year, month, day, 12, 0, 0));
+    const firstStart = makeDate(1);
+    const firstEnd = makeDate(15);
+    const secondStart = makeDate(16);
+    const secondEnd = makeDate(lastDay);
+
+    [
+      {
+        start: firstStart,
+        label: "1st half",
+        range: `${formatDate(toDateInputValue(firstStart))} - ${formatDate(
+          toDateInputValue(firstEnd),
+        )}`,
+      },
+      {
+        start: secondStart,
+        label: "2nd half",
+        range: `${formatDate(toDateInputValue(secondStart))} - ${formatDate(
+          toDateInputValue(secondEnd),
+        )}`,
+      },
+    ].forEach((entry) => {
+      if (entry.start.getTime() < today.getTime()) {
+        return;
+      }
+      options.push({
+        value: toDateInputValue(entry.start),
+        title: formatDate(toDateInputValue(entry.start)),
+        subtitle: `${entry.label} • ${entry.range}`,
+      });
+    });
+  }
+
+  return options.slice(0, 4);
+};
+
+type RequestCalendarDay = {
+  date: string;
+  shift: {
+    id: number;
+    code: string;
+    name: string;
+    colorHex?: string | null;
+    isDayOff?: boolean;
+    startMinutes: number;
+    endMinutes: number;
+    spansMidnight: boolean;
+    breakStartMinutes: number | null;
+    breakEndMinutes: number | null;
+    breakMinutesUnpaid: number;
+    paidHoursPerDay: string;
+    notes: string | null;
+  } | null;
+  source: "override" | "weekly_schedule" | "none";
+  leave: {
+    requestId: string | null;
+    leaveType: "VACATION" | "SICK" | "SIL" | "PERSONAL" | "EMERGENCY" | "UNPAID";
+    isPaidLeave: boolean;
+  } | null;
+  scheduledStartMinutes: number | null;
+  scheduledEndMinutes: number | null;
+};
+
+const toDateInputValue = (date: Date) => date.toISOString().slice(0, 10);
+const fromDateInputValue = (value: string) =>
+  new Date(`${value}T12:00:00+08:00`);
+
+const leaveTypeOptions: Array<Extract<LeaveRequestType, "SICK" | "SIL" | "UNPAID">> =
+  ["SICK", "SIL", "UNPAID"];
+
+const monthDayLabel = (month: number, day: number) =>
+  new Date(
+    `2026-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}T12:00:00+08:00`,
+  ).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+
+const formatMinutes = (minutes: number | null | undefined) => {
+  if (minutes == null) return "—";
+  const total = ((minutes % (24 * 60)) + 24 * 60) % (24 * 60);
+  const h24 = Math.floor(total / 60);
+  const m = total % 60;
+  const suffix = h24 >= 12 ? "PM" : "AM";
+  const h12 = h24 % 12 || 12;
+  return `${h12}:${m.toString().padStart(2, "0")} ${suffix}`;
+};
+
+const bookingShiftStyle = (shift?: RequestCalendarDay["shift"] | null) =>
+  shift?.colorHex
+    ? {
+        borderColor: shift.colorHex,
+        backgroundColor: `${shift.colorHex}18`,
+        color: shift.colorHex,
+      }
+    : undefined;
+
+const isBetweenInclusive = (dayKey: string, start: string, end: string) =>
+  dayKey >= start && dayKey <= end;
+
+const resolveNextRange = (currentStart: string, currentEnd: string, clicked: string) => {
+  if (!currentStart || !currentEnd || currentStart !== currentEnd) {
+    return { start: clicked, end: clicked };
+  }
+  if (clicked < currentStart) {
+    return { start: clicked, end: currentStart };
+  }
+  if (clicked === currentStart) {
+    return { start: clicked, end: clicked };
+  }
+  return { start: currentStart, end: clicked };
+};
+
+const leaveTypeBadge = (leaveType: RequestCalendarDay["leave"] extends infer T
+  ? T extends { leaveType: infer U }
+    ? U
+    : never
+  : never) => {
+  switch (leaveType) {
+    case "SICK":
+      return "Sick";
+    case "SIL":
+      return "SIL";
+    case "UNPAID":
+      return "Unpaid";
+    case "VACATION":
+      return "Vacation";
+    case "PERSONAL":
+      return "Personal";
+    case "EMERGENCY":
+      return "Emergency";
+    default:
+      return "Leave";
+  }
+};
 
 export default function CashAdvanceRequestFormPage({
   lockedRequestType,
 }: RequestFormPageProps) {
   const router = useRouter();
   const toast = useToast();
+  const { employee } = useSession();
   const requestTypeOptions = lockedRequestType
     ? [lockedRequestType]
     : ([
-        "CASH_ADVANCE",
-        "DAY_OFF",
         "LEAVE",
+        "DAY_OFF",
         "SCHEDULE_CHANGE",
         "SCHEDULE_SWAP",
+        "CASH_ADVANCE",
       ] as const);
   const [requestType, setRequestType] = useState<RequestType>(
-    lockedRequestType ?? "CASH_ADVANCE",
+    lockedRequestType ?? "LEAVE",
   );
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const [amount, setAmount] = useState("");
-  const [repaymentPerPayroll, setRepaymentPerPayroll] = useState("");
-  const [preferredStartDate, setPreferredStartDate] = useState(
-    toDateInputValue(new Date()),
-  );
-  const [cashReason, setCashReason] = useState("");
-
-  const [leaveType, setLeaveType] = useState<LeaveRequestType>("VACATION");
-  const [leaveStartDate, setLeaveStartDate] = useState(
-    toDateInputValue(new Date()),
-  );
+  const [leaveSummary, setLeaveSummary] =
+    useState<EmployeeLeaveBalanceSummary | null>(null);
+  const [leaveType, setLeaveType] = useState<LeaveRequestType>("SICK");
+  const [leaveStartDate, setLeaveStartDate] = useState(toDateInputValue(new Date()));
   const [leaveEndDate, setLeaveEndDate] = useState(toDateInputValue(new Date()));
   const [leaveReason, setLeaveReason] = useState("");
 
-  const [dayOffWorkDate, setDayOffWorkDate] = useState(toDateInputValue(new Date()));
+  const [sourceOffDate, setSourceOffDate] = useState("");
+  const [targetWorkDate, setTargetWorkDate] = useState("");
   const [dayOffPreview, setDayOffPreview] = useState<DayOffPreview | null>(null);
   const [dayOffReason, setDayOffReason] = useState("");
-  const [dayOffLoading, setDayOffLoading] = useState(false);
 
-  const [scheduleChangeWorkDate, setScheduleChangeWorkDate] = useState(
-    toDateInputValue(new Date()),
-  );
+  const [scheduleChangeStartDate, setScheduleChangeStartDate] = useState("");
+  const [scheduleChangeEndDate, setScheduleChangeEndDate] = useState("");
   const [scheduleChangeShifts, setScheduleChangeShifts] = useState<
     ScheduleChangeShiftOption[]
   >([]);
-  const [scheduleChangeShiftQuery, setScheduleChangeShiftQuery] = useState("");
   const [scheduleChangeShiftId, setScheduleChangeShiftId] = useState("");
-  const [scheduleChangeDropdownOpen, setScheduleChangeDropdownOpen] =
-    useState(false);
   const [scheduleChangePreview, setScheduleChangePreview] =
     useState<ScheduleChangePreview | null>(null);
   const [scheduleChangeReason, setScheduleChangeReason] = useState("");
-  const [scheduleChangeLoading, setScheduleChangeLoading] = useState(false);
 
-  const [swapWorkDate, setSwapWorkDate] = useState(toDateInputValue(new Date()));
-  const [swapCoworkers, setSwapCoworkers] = useState<ScheduleSwapEmployeeOption[]>(
-    [],
-  );
-  const [swapCoworkerQuery, setSwapCoworkerQuery] = useState("");
+  const [swapWorkDate, setSwapWorkDate] = useState("");
+  const [swapCoworkers, setSwapCoworkers] = useState<ScheduleSwapEmployeeOption[]>([]);
   const [swapCoworkerId, setSwapCoworkerId] = useState("");
-  const [swapCoworkerDropdownOpen, setSwapCoworkerDropdownOpen] = useState(false);
   const [swapPreview, setSwapPreview] = useState<ScheduleSwapPreview | null>(null);
   const [swapReason, setSwapReason] = useState("");
-  const [swapLoading, setSwapLoading] = useState(false);
 
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [cashAmount, setCashAmount] = useState("");
+  const [cashPreferredStartDate, setCashPreferredStartDate] = useState("");
+  const [cashReason, setCashReason] = useState("");
+
+  const [calendarMonth, setCalendarMonth] = useState(() => startOfMonth(new Date()));
+  const [calendarDays, setCalendarDays] = useState<RequestCalendarDay[]>([]);
+  const [calendarLoading, setCalendarLoading] = useState(false);
+  const [calendarError, setCalendarError] = useState<string | null>(null);
+
   const isLeaveOnly = lockedRequestType === "LEAVE";
   const exitHref = isLeaveOnly ? "/employee/requests/leave" : "/employee/requests";
-  const pageTitle = isLeaveOnly ? "New Leave Request" : "New Request";
-  const pageDescription = isLeaveOnly
-    ? "Submit a leave request and track its status from the Requests module."
-    : "Submit a request for manager approval. Cash advance, day off, leave, schedule change, and schedule swap are currently available request types.";
+  const todayKey = toDateInputValue(new Date());
 
-  const amountValue = Number(amount);
-  const repaymentValue = Number(repaymentPerPayroll);
-  const estimatedPayrolls =
-    Number.isFinite(amountValue) &&
-    amountValue > 0 &&
-    Number.isFinite(repaymentValue) &&
-    repaymentValue > 0
-      ? Math.ceil(amountValue / repaymentValue)
+  const leaveDays = countDaysInclusive(leaveStartDate, leaveEndDate) ?? 0;
+  const leaveBucket =
+    leaveType === "SICK"
+      ? leaveSummary?.sick ?? null
+      : leaveType === "SIL"
+        ? leaveSummary?.sil ?? null
+        : null;
+  const today = new Date();
+  const silMinDate = new Date(today.getTime() + 14 * 24 * 60 * 60 * 1000);
+  const silBlocked =
+    leaveType === "SIL" &&
+    new Date(`${leaveStartDate}T00:00:00+08:00`).getTime() <
+      new Date(silMinDate.toISOString().slice(0, 10) + "T00:00:00+08:00").getTime();
+  const leaveCreditBlocked =
+    leaveBucket != null &&
+    (leaveBucket.remaining <= 0 || leaveDays > leaveBucket.remaining);
+  const leaveInlineError = silBlocked
+    ? "SIL must be requested at least 14 days in advance."
+    : leaveCreditBlocked
+      ? `Only ${leaveBucket?.remaining ?? 0} credit(s) remaining.`
       : null;
 
-  const leaveDays = countDaysInclusive(leaveStartDate, leaveEndDate);
-  const selectedSwapCoworker = useMemo(
-    () =>
-      swapCoworkers.find((coworker) => coworker.employeeId === swapCoworkerId) ??
-      null,
-    [swapCoworkerId, swapCoworkers],
-  );
-  const selectedScheduleChangeShift = useMemo(
-    () =>
-      scheduleChangeShifts.find(
-        (shift) => String(shift.id) === scheduleChangeShiftId,
-      ) ?? null,
-    [scheduleChangeShiftId, scheduleChangeShifts],
-  );
-
-  const loadScheduleChangeShifts = useCallback(async (query: string) => {
-    try {
-      setScheduleChangeLoading(true);
-      const result = await listScheduleChangeShifts({
-        query,
-        limit: 50,
-      });
-      if (!result.success) {
-        throw new Error(result.error || "Failed to load shifts");
-      }
-      setScheduleChangeShifts(result.data ?? []);
-    } catch (err) {
-      setScheduleChangeShifts([]);
-      setError(err instanceof Error ? err.message : "Failed to load shifts");
-    } finally {
-      setScheduleChangeLoading(false);
+  const loadLeaveSummary = useCallback(async () => {
+    const result = await getEmployeeLeaveBalanceSummary();
+    if (!result.success) {
+      setError(result.error || "Failed to load leave credits.");
+      return;
     }
+    setLeaveSummary(result.data ?? null);
   }, []);
 
-  const loadSwapCoworkers = useCallback(async (query: string) => {
+  const loadScheduleChangeShifts = useCallback(async () => {
+    const result = await listScheduleChangeShifts({ limit: 100 });
+    if (!result.success) {
+      setError(result.error || "Failed to load shifts.");
+      return;
+    }
+    setScheduleChangeShifts(result.data ?? []);
+  }, []);
+
+  const loadSwapCoworkers = useCallback(async () => {
+    const result = await listEmployeesForScheduleSwap({ limit: 100 });
+    if (!result.success) {
+      setError(result.error || "Failed to load coworkers.");
+      return;
+    }
+    setSwapCoworkers(result.data ?? []);
+  }, []);
+
+  const loadCalendarMonth = useCallback(async () => {
+    if (!employee?.employeeId || requestType === "CASH_ADVANCE") {
+      setCalendarDays([]);
+      return;
+    }
     try {
-      setSwapLoading(true);
-      const result = await listEmployeesForScheduleSwap({
-        query,
-        limit: 50,
+      setCalendarLoading(true);
+      setCalendarError(null);
+      const result = await getEmployeeMonthSchedule({
+        employeeId: employee.employeeId,
+        anchorDate: toDateInputValue(calendarMonth),
       });
       if (!result.success) {
-        throw new Error(result.error || "Failed to load coworkers");
+        throw new Error(result.error || "Failed to load booking calendar.");
       }
-      setSwapCoworkers(result.data ?? []);
+      setCalendarDays((result.days ?? []) as RequestCalendarDay[]);
     } catch (err) {
-      setSwapCoworkers([]);
-      setError(err instanceof Error ? err.message : "Failed to load coworkers");
+      setCalendarDays([]);
+      setCalendarError(
+        err instanceof Error ? err.message : "Failed to load booking calendar.",
+      );
     } finally {
-      setSwapLoading(false);
+      setCalendarLoading(false);
     }
-  }, []);
+  }, [calendarMonth, employee?.employeeId, requestType]);
 
   useEffect(() => {
-    if (requestType !== "DAY_OFF" || !dayOffWorkDate) {
+    if (requestType === "LEAVE") {
+      void loadLeaveSummary();
+      return;
+    }
+    if (requestType === "SCHEDULE_CHANGE") {
+      void loadScheduleChangeShifts();
+      return;
+    }
+    if (requestType === "SCHEDULE_SWAP") {
+      void loadSwapCoworkers();
+    }
+  }, [
+    loadLeaveSummary,
+    loadScheduleChangeShifts,
+    loadSwapCoworkers,
+    requestType,
+  ]);
+
+  const cashAdvanceStartOptions = useMemo(
+    () => buildUpcomingBimonthlyStartOptions(),
+    [],
+  );
+
+  useEffect(() => {
+    if (!cashPreferredStartDate && cashAdvanceStartOptions[0]) {
+      setCashPreferredStartDate(cashAdvanceStartOptions[0].value);
+    }
+  }, [cashAdvanceStartOptions, cashPreferredStartDate]);
+
+  useEffect(() => {
+    void loadCalendarMonth();
+  }, [loadCalendarMonth]);
+
+  useEffect(() => {
+    setError(null);
+  }, [requestType]);
+
+  useEffect(() => {
+    if (
+      requestType !== "DAY_OFF" ||
+      !sourceOffDate ||
+      !targetWorkDate ||
+      sourceOffDate === targetWorkDate
+    ) {
       setDayOffPreview(null);
       return;
     }
-
     let cancelled = false;
-
-    const loadPreview = async () => {
-      try {
-        setDayOffLoading(true);
-        const result = await getDayOffPreview({
-          workDate: dayOffWorkDate,
-        });
-        if (cancelled) return;
-        if (!result.success) {
-          setDayOffPreview(null);
-          setError(result.error || "Failed to load day off preview");
-          return;
-        }
-        setError(null);
-        setDayOffPreview(result.data ?? null);
-      } finally {
-        if (!cancelled) {
-          setDayOffLoading(false);
-        }
+    void (async () => {
+      const result = await getDayOffPreview({
+        sourceOffDate,
+        targetWorkDate,
+      });
+      if (cancelled) return;
+      if (!result.success) {
+        setDayOffPreview(null);
+        return;
       }
-    };
-
-    void loadPreview();
-
+      setDayOffPreview(result.data ?? null);
+    })();
     return () => {
       cancelled = true;
     };
-  }, [dayOffWorkDate, requestType]);
-
-  useEffect(() => {
-    if (requestType !== "SCHEDULE_CHANGE") return;
-    void loadScheduleChangeShifts(scheduleChangeShiftQuery);
-  }, [loadScheduleChangeShifts, requestType, scheduleChangeShiftQuery]);
+  }, [requestType, sourceOffDate, targetWorkDate]);
 
   useEffect(() => {
     if (
       requestType !== "SCHEDULE_CHANGE" ||
       !scheduleChangeShiftId ||
-      !scheduleChangeWorkDate
+      !scheduleChangeStartDate ||
+      !scheduleChangeEndDate
     ) {
       setScheduleChangePreview(null);
       return;
     }
-
     let cancelled = false;
-
-    const loadPreview = async () => {
-      try {
-        setScheduleChangeLoading(true);
-        const result = await getScheduleChangePreview({
-          requestedShiftId: scheduleChangeShiftId,
-          workDate: scheduleChangeWorkDate,
-        });
-        if (cancelled) return;
-        if (!result.success) {
-          setScheduleChangePreview(null);
-          setError(result.error || "Failed to load schedule change preview");
-          return;
-        }
-        setError(null);
-        setScheduleChangePreview(result.data ?? null);
-      } finally {
-        if (!cancelled) {
-          setScheduleChangeLoading(false);
-        }
+    void (async () => {
+      const result = await getScheduleChangePreview({
+        requestedShiftId: scheduleChangeShiftId,
+        startDate: scheduleChangeStartDate,
+        endDate: scheduleChangeEndDate,
+      });
+      if (cancelled) return;
+      if (!result.success) {
+        setScheduleChangePreview(null);
+        return;
       }
-    };
-
-    void loadPreview();
-
+      setScheduleChangePreview(result.data ?? null);
+    })();
     return () => {
       cancelled = true;
     };
-  }, [requestType, scheduleChangeShiftId, scheduleChangeWorkDate]);
-
-  useEffect(() => {
-    if (requestType !== "SCHEDULE_SWAP") return;
-    void loadSwapCoworkers(swapCoworkerQuery);
-  }, [loadSwapCoworkers, requestType, swapCoworkerQuery]);
+  }, [
+    requestType,
+    scheduleChangeShiftId,
+    scheduleChangeStartDate,
+    scheduleChangeEndDate,
+  ]);
 
   useEffect(() => {
     if (requestType !== "SCHEDULE_SWAP" || !swapCoworkerId || !swapWorkDate) {
       setSwapPreview(null);
       return;
     }
-
     let cancelled = false;
-
-    const loadPreview = async () => {
-      try {
-        setSwapLoading(true);
-        const result = await getScheduleSwapPreview({
-          coworkerEmployeeId: swapCoworkerId,
-          workDate: swapWorkDate,
-        });
-        if (cancelled) return;
-        if (!result.success) {
-          setSwapPreview(null);
-          setError(result.error || "Failed to load swap preview");
-          return;
-        }
-        setError(null);
-        setSwapPreview(result.data ?? null);
-      } finally {
-        if (!cancelled) {
-          setSwapLoading(false);
-        }
+    void (async () => {
+      const result = await getScheduleSwapPreview({
+        coworkerEmployeeId: swapCoworkerId,
+        workDate: swapWorkDate,
+      });
+      if (cancelled) return;
+      if (!result.success) {
+        setSwapPreview(null);
+        return;
       }
-    };
-
-    void loadPreview();
-
+      setSwapPreview(result.data ?? null);
+    })();
     return () => {
       cancelled = true;
     };
   }, [requestType, swapCoworkerId, swapWorkDate]);
 
-  const previewRows = useMemo(() => {
+  const selectedShift = useMemo(
+    () =>
+      scheduleChangeShifts.find((shift) => String(shift.id) === scheduleChangeShiftId) ??
+      null,
+    [scheduleChangeShiftId, scheduleChangeShifts],
+  );
+
+  const organizedScheduleChangeShifts = useMemo(
+    () =>
+      [...scheduleChangeShifts].sort(
+        (left, right) =>
+          left.code.localeCompare(right.code) || left.name.localeCompare(right.name),
+      ),
+    [scheduleChangeShifts],
+  );
+
+  const selectedCoworker = useMemo(
+    () => swapCoworkers.find((row) => row.employeeId === swapCoworkerId) ?? null,
+    [swapCoworkerId, swapCoworkers],
+  );
+
+  const organizedSwapCoworkers = useMemo(
+    () =>
+      [...swapCoworkers].sort(
+        (left, right) =>
+          left.employeeName.localeCompare(right.employeeName) ||
+          left.employeeCode.localeCompare(right.employeeCode),
+      ),
+    [swapCoworkers],
+  );
+
+  const daysByDate = useMemo(() => {
+    const map = new Map<string, RequestCalendarDay>();
+    calendarDays.forEach((day) => {
+      map.set(day.date, day);
+    });
+    return map;
+  }, [calendarDays]);
+
+  const visibleCalendarDates = useMemo(
+    () =>
+      eachDayOfInterval({
+        start: startOfWeek(startOfMonth(calendarMonth), { weekStartsOn: 1 }),
+        end: endOfWeek(endOfMonth(calendarMonth), { weekStartsOn: 1 }),
+      }),
+    [calendarMonth],
+  );
+
+  const currentMonthLabel = useMemo(
+    () =>
+      calendarMonth.toLocaleDateString(undefined, {
+        timeZone: TZ,
+        month: "long",
+        year: "numeric",
+      }),
+    [calendarMonth],
+  );
+
+  const bookingHint =
+    requestType === "LEAVE"
+      ? "Click one date to start, then another date to extend leave range."
+      : requestType === "DAY_OFF"
+        ? "Click an OFF day as source, then click a work shift day as target."
+        : requestType === "SCHEDULE_CHANGE"
+          ? "Click one workday to start, then another workday to extend the change range."
+          : requestType === "SCHEDULE_SWAP"
+            ? "Click one scheduled workday to request a same-date swap."
+            : "";
+
+  const isCalendarSelectionValid = useMemo(() => {
+    if (requestType === "LEAVE") return Boolean(leaveStartDate && leaveEndDate);
+    if (requestType === "DAY_OFF") return Boolean(sourceOffDate && targetWorkDate);
+    if (requestType === "SCHEDULE_CHANGE") {
+      return Boolean(
+        scheduleChangeShiftId && scheduleChangeStartDate && scheduleChangeEndDate,
+      );
+    }
+    if (requestType === "SCHEDULE_SWAP") return Boolean(swapCoworkerId && swapWorkDate);
+    return Boolean(cashPreferredStartDate);
+  }, [
+    cashPreferredStartDate,
+    leaveEndDate,
+    leaveStartDate,
+    requestType,
+    scheduleChangeEndDate,
+    scheduleChangeShiftId,
+    scheduleChangeStartDate,
+    sourceOffDate,
+    swapCoworkerId,
+    swapWorkDate,
+    targetWorkDate,
+  ]);
+
+  const handleCalendarPick = (dayKey: string) => {
+    const day = daysByDate.get(dayKey);
+    const clickedDate = fromDateInputValue(dayKey);
+    const todayStart = fromDateInputValue(todayKey);
+    if (isBefore(clickedDate, todayStart)) {
+      return;
+    }
+
     if (requestType === "LEAVE") {
-      return [
-        {
-          label: "Leave Type",
-          value: leaveTypeLabel(leaveType),
-        },
-        {
-          label: "Leave Period",
-          value: formatDateRange(leaveStartDate, leaveEndDate),
-        },
-        {
-          label: "Total Days",
-          value:
-            leaveDays == null
-              ? "Check dates"
-              : `${leaveDays} day${leaveDays === 1 ? "" : "s"}`,
-        },
-      ];
+      const next = resolveNextRange(leaveStartDate, leaveEndDate, dayKey);
+      setLeaveStartDate(next.start);
+      setLeaveEndDate(next.end);
+      return;
     }
 
     if (requestType === "DAY_OFF") {
-      return [
-        {
-          label: "Day Off Date",
-          value: formatDateRange(dayOffWorkDate, dayOffWorkDate),
-        },
-        {
-          label: "Current Schedule",
-          value: dayOffPreview?.current.shiftLabel ?? "Checking schedule",
-        },
-        {
-          label: "Request Status",
-          value: dayOffPreview
-            ? dayOffPreview.wouldChange
-              ? "Ready to submit"
-              : "Already day off"
-            : "Check preview",
-        },
-      ];
+      if (!day || day.leave || !day.shift) return;
+      if (day.shift.isDayOff) {
+        setSourceOffDate(dayKey);
+      } else {
+        setTargetWorkDate(dayKey);
+      }
+      return;
     }
 
     if (requestType === "SCHEDULE_CHANGE") {
-      return [
-        {
-          label: "Change Date",
-          value: formatDateRange(scheduleChangeWorkDate, scheduleChangeWorkDate),
-        },
-        {
-          label: "Requested Shift",
-          value: selectedScheduleChangeShift
-            ? selectedScheduleChangeShift.name
-            : "Select requested shift",
-        },
-        {
-          label: "Request Status",
-          value: scheduleChangePreview
-            ? "Ready to submit"
-            : scheduleChangeShiftId
-              ? "Check preview"
-              : "Choose a shift",
-        },
-      ];
+      if (!day || day.leave || !day.shift || day.shift.isDayOff) return;
+      const next = resolveNextRange(
+        scheduleChangeStartDate,
+        scheduleChangeEndDate,
+        dayKey,
+      );
+      setScheduleChangeStartDate(next.start);
+      setScheduleChangeEndDate(next.end);
+      return;
     }
 
     if (requestType === "SCHEDULE_SWAP") {
-      return [
-        {
-          label: "Swap Date",
-          value: formatDateRange(swapWorkDate, swapWorkDate),
-        },
-        {
-          label: "Coworker",
-          value: selectedSwapCoworker
-            ? `${selectedSwapCoworker.employeeCode} · ${selectedSwapCoworker.employeeName}`
-            : "Select coworker",
-        },
-        {
-          label: "Swap Status",
-          value: swapPreview
-            ? "Ready to submit"
-            : swapCoworkerId
-              ? "Check preview"
-              : "Choose a coworker",
-        },
-      ];
+      if (!day || day.leave || !day.shift || day.shift.isDayOff) return;
+      setSwapWorkDate(dayKey);
     }
+  };
 
-    return [
-      {
-        label: "Requested Amount",
-        value:
-          Number.isFinite(amountValue) && amountValue > 0
-            ? formatMoney(amountValue)
-            : "Enter amount",
-      },
-      {
-        label: "Per Payroll",
-        value:
-          Number.isFinite(repaymentValue) && repaymentValue > 0
-            ? formatMoney(repaymentValue)
-            : "Enter repayment",
-      },
-      {
-        label: "Estimated Payrolls",
-        value: estimatedPayrolls ? String(estimatedPayrolls) : "Not ready",
-      },
-    ];
-  }, [
-    amountValue,
-    dayOffPreview,
-    dayOffWorkDate,
-    estimatedPayrolls,
-    leaveDays,
-    leaveEndDate,
-    leaveStartDate,
-    leaveType,
-    requestType,
-    repaymentValue,
-    scheduleChangePreview,
-    scheduleChangeShiftId,
-    scheduleChangeWorkDate,
-    selectedScheduleChangeShift,
-    selectedSwapCoworker,
-    swapCoworkerId,
-    swapPreview,
-    swapWorkDate,
-  ]);
-
-  const handleSubmit = async () => {
+  const submit = async () => {
     try {
       setSubmitting(true);
       setError(null);
@@ -464,645 +670,738 @@ export default function CashAdvanceRequestFormPage({
             })
           : requestType === "DAY_OFF"
             ? await createDayOffRequest({
-                workDate: dayOffWorkDate,
+                sourceOffDate,
+                targetWorkDate,
                 reason: dayOffReason,
               })
-          : requestType === "SCHEDULE_CHANGE"
-            ? await createScheduleChangeRequest({
-                workDate: scheduleChangeWorkDate,
-                requestedShiftId: scheduleChangeShiftId,
-                reason: scheduleChangeReason,
-              })
-          : requestType === "SCHEDULE_SWAP"
-            ? await createScheduleSwapRequest({
-                coworkerEmployeeId: swapCoworkerId,
-                workDate: swapWorkDate,
-                reason: swapReason,
-              })
-            : await createCashAdvanceRequest({
-                amount,
-                repaymentPerPayroll,
-                preferredStartDate,
-                reason: cashReason,
-              });
+            : requestType === "SCHEDULE_CHANGE"
+              ? await createScheduleChangeRequest({
+                  startDate: scheduleChangeStartDate,
+                  endDate: scheduleChangeEndDate,
+                  requestedShiftId: scheduleChangeShiftId,
+                  reason: scheduleChangeReason,
+                })
+              : requestType === "SCHEDULE_SWAP"
+                ? await createScheduleSwapRequest({
+                    coworkerEmployeeId: swapCoworkerId,
+                    workDate: swapWorkDate,
+                    reason: swapReason,
+                  })
+                : await createCashAdvanceRequest({
+                    amount: cashAmount,
+                    preferredStartDate: cashPreferredStartDate,
+                    reason: cashReason,
+                  });
 
       if (!result.success) {
-        throw new Error(result.error || "Failed to submit request");
+        throw new Error(result.error || "Failed to submit request.");
       }
 
-      toast.success("Request submitted successfully.", {
-        description: `${requestTypeLabel(requestType)} request is now waiting for review.`,
+      toast.success(`${requestTypeLabel(requestType)} submitted`, {
+        description: "Your request is now waiting for review.",
       });
       router.push(exitHref);
       router.refresh();
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Failed to submit request";
-      setError(message);
-      toast.error("Failed to submit request.", {
-        description: message,
-      });
+      setError(err instanceof Error ? err.message : "Failed to submit request.");
     } finally {
       setSubmitting(false);
     }
   };
 
-  const submitDisabled =
-    submitting ||
-    (requestType === "DAY_OFF" &&
-      (!dayOffPreview || !dayOffPreview.wouldChange)) ||
-    (requestType === "SCHEDULE_CHANGE" &&
-      (!scheduleChangeShiftId || !scheduleChangePreview)) ||
-    (requestType === "SCHEDULE_SWAP" && (!swapCoworkerId || !swapPreview));
-
   return (
-    <div className="space-y-6 px-4 py-8 sm:px-8 lg:px-12">
-      <div>
-        <h1 className="text-2xl font-semibold">{pageTitle}</h1>
-        <p className="text-sm text-muted-foreground">{pageDescription}</p>
-      </div>
-
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(18rem,24rem)]">
-        <Card className="shadow-sm">
-          <CardHeader>
-            <CardTitle className="text-lg">Request Details</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            {lockedRequestType ? (
-              <div className="rounded-xl border border-border/70 bg-muted/20 px-4 py-3">
-                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  Request Type
-                </p>
-                <p className="mt-2 text-lg font-semibold">
-                  {requestTypeLabel(lockedRequestType)}
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <Label htmlFor="request-type">Request Type</Label>
-                <Select
-                  value={requestType}
-                  onValueChange={(value) => setRequestType(value as RequestType)}
-                >
-                  <SelectTrigger id="request-type">
-                    <SelectValue placeholder="Select request type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {requestTypeOptions.map((option) => (
-                      <SelectItem key={option} value={option}>
-                        {requestTypeLabel(option)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-
-            {requestType === "LEAVE" ? (
-              <>
-                <div className="space-y-2">
-                  <Label htmlFor="leave-type">Leave Type</Label>
-                  <Select
-                    value={leaveType}
-                    onValueChange={(value) => setLeaveType(value as LeaveRequestType)}
-                  >
-                    <SelectTrigger id="leave-type">
-                      <SelectValue placeholder="Select leave type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {leaveTypeOptions.map((option) => (
-                        <SelectItem key={option} value={option}>
-                          {leaveTypeLabel(option)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="leave-start-date">Start Date</Label>
-                    <Input
-                      id="leave-start-date"
-                      type="date"
-                      value={leaveStartDate}
-                      onChange={(event) => setLeaveStartDate(event.target.value)}
-                    />
+    <div className="mx-auto w-full max-w-[1500px] space-y-6 px-4 pb-8 lg:px-6">
+      <Card className="overflow-hidden">
+        <CardContent className="p-5 sm:p-6">
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]">
+            <div className="space-y-5">
+              <div className="flex flex-col gap-4 rounded-2xl border border-border/70 bg-card/60 p-4 sm:p-5">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="space-y-1">
+                    <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">
+                      Request workspace
+                    </p>
+                    <CardTitle>{isLeaveOnly ? "New Leave Request" : "New Request"}</CardTitle>
+                    <p className="text-sm text-muted-foreground">
+                      Compact request flow. Pick dates fast, keep chosen details visible.
+                    </p>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="leave-end-date">End Date</Label>
-                    <Input
-                      id="leave-end-date"
-                      type="date"
-                      value={leaveEndDate}
-                      onChange={(event) => setLeaveEndDate(event.target.value)}
-                    />
+                  <Button asChild variant="outline">
+                    <Link href={exitHref}>Back</Link>
+                  </Button>
+                </div>
+
+                <div className="grid gap-3 lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
+                  {!lockedRequestType ? (
+                    <div className="space-y-2">
+                      <Label>Request type</Label>
+                      <Select
+                        value={requestType}
+                        onValueChange={(value) => setRequestType(value as RequestType)}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Pick request type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {REQUEST_TYPE_GROUPS.map((group, groupIndex) => {
+                            const options = group.options.filter((option) =>
+                              requestTypeOptions.includes(option),
+                            );
+                            if (!options.length) {
+                              return null;
+                            }
+                            return (
+                              <div key={group.label}>
+                                {groupIndex > 0 ? <SelectSeparator /> : null}
+                                <SelectGroup>
+                                  <SelectLabel>{group.label}</SelectLabel>
+                                  {options.map((option) => (
+                                    <SelectItem key={option} value={option}>
+                                      {requestTypeLabel(option)}
+                                    </SelectItem>
+                                  ))}
+                                </SelectGroup>
+                              </div>
+                            );
+                          })}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ) : null}
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-xl border border-border/70 bg-muted/20 p-3">
+                      <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                        Active flow
+                      </p>
+                      <p className="mt-2 text-sm font-medium">
+                        {requestTypeLabel(requestType)}
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {REQUEST_TYPE_DESCRIPTIONS[requestType]}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-border/70 bg-muted/20 p-3">
+                      <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                        How to pick
+                      </p>
+                      <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                        {requestType === "CASH_ADVANCE"
+                          ? "No calendar needed. Enter amount and reason, then submit."
+                          : bookingHint}
+                      </p>
+                    </div>
                   </div>
                 </div>
+              </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="leave-reason">Reason</Label>
-                  <textarea
-                    id="leave-reason"
-                    value={leaveReason}
-                    onChange={(event) => setLeaveReason(event.target.value)}
-                    placeholder="Why are you requesting this leave?"
-                    className="min-h-32 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                  />
-                </div>
-              </>
-            ) : requestType === "DAY_OFF" ? (
-              <>
-                <div className="space-y-2">
-                  <Label htmlFor="day-off-date">Day Off Date</Label>
-                  <Input
-                    id="day-off-date"
-                    type="date"
-                    value={dayOffWorkDate}
-                    onChange={(event) => setDayOffWorkDate(event.target.value)}
-                  />
-                </div>
+              {requestType !== "CASH_ADVANCE" ? (
+                <Card className="border-border/70">
+                  <CardHeader className="border-b border-border/70 pb-3">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <CardTitle className="flex items-center gap-2 text-base">
+                          <CalendarDays className="h-4 w-4 text-muted-foreground" />
+                          Booking Calendar
+                        </CardTitle>
+                        <p className="text-xs text-muted-foreground">{bookingHint}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          onClick={() => setCalendarMonth((current) => addMonths(current, -1))}
+                        >
+                          <ChevronLeft className="h-4 w-4" />
+                        </Button>
+                        <div className="min-w-36 text-center text-sm font-medium">
+                          {currentMonthLabel}
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          onClick={() => setCalendarMonth((current) => addMonths(current, 1))}
+                        >
+                          <ChevronRight className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-3 p-3">
+                    {calendarError ? (
+                      <p className="text-sm text-destructive">{calendarError}</p>
+                    ) : null}
+                    <div className="overflow-x-auto">
+                      <div className="w-full max-w-[46rem] min-w-[40rem] space-y-1.5">
+                        <div className="grid grid-cols-7 gap-1.5 text-center text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                          {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((label) => (
+                            <div key={label} className="rounded-md border border-border/50 py-1">
+                              {label}
+                            </div>
+                          ))}
+                        </div>
+                        <div className="grid grid-cols-7 gap-1.5">
+                          {visibleCalendarDates.map((date) => {
+                            const dayKey = toDateInputValue(date);
+                            const day = daysByDate.get(dayKey) ?? null;
+                            const inMonth = isSameMonth(date, calendarMonth);
+                            const isPast = isBefore(
+                              fromDateInputValue(dayKey),
+                              fromDateInputValue(todayKey),
+                            );
+                            const isLeaveRange =
+                              requestType === "LEAVE" &&
+                              leaveStartDate &&
+                              leaveEndDate &&
+                              isBetweenInclusive(dayKey, leaveStartDate, leaveEndDate);
+                            const isChangeRange =
+                              requestType === "SCHEDULE_CHANGE" &&
+                              scheduleChangeStartDate &&
+                              scheduleChangeEndDate &&
+                              isBetweenInclusive(
+                                dayKey,
+                                scheduleChangeStartDate,
+                                scheduleChangeEndDate,
+                              );
+                            const isSourceOff =
+                              requestType === "DAY_OFF" && sourceOffDate === dayKey;
+                            const isTargetWork =
+                              requestType === "DAY_OFF" && targetWorkDate === dayKey;
+                            const isSwapDate =
+                              requestType === "SCHEDULE_SWAP" && swapWorkDate === dayKey;
+                            const isSelected =
+                              isLeaveRange ||
+                              isChangeRange ||
+                              isSourceOff ||
+                              isTargetWork ||
+                              isSwapDate;
 
-                <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            return (
+                              <button
+                                key={dayKey}
+                                type="button"
+                                disabled={!inMonth || isPast}
+                                onClick={() => handleCalendarPick(dayKey)}
+                                className={cn(
+                                  "aspect-square min-h-0 rounded-lg border p-1.5 text-left transition",
+                                  inMonth
+                                    ? "border-border/70 bg-card hover:border-primary/40 hover:bg-muted/20"
+                                    : "border-border/40 bg-muted/10 opacity-40",
+                                  isPast && "cursor-not-allowed opacity-50",
+                                  isSelected &&
+                                    !isSourceOff &&
+                                    !isTargetWork &&
+                                    "border-primary/70 bg-primary/18 text-primary-foreground shadow-[inset_0_0_0_1px_hsl(var(--primary)/0.45)]",
+                                  isSelected &&
+                                    !isSourceOff &&
+                                    !isTargetWork &&
+                                    "hover:border-primary/70 hover:bg-primary/18",
+                                  isSourceOff &&
+                                    "border-amber-500/70 bg-amber-500/18 shadow-[inset_0_0_0_1px_rgb(245_158_11_/_0.45)]",
+                                  isSourceOff &&
+                                    "hover:border-amber-500/70 hover:bg-amber-500/18",
+                                  isTargetWork &&
+                                    "border-sky-500/70 bg-sky-500/18 shadow-[inset_0_0_0_1px_rgb(14_165_233_/_0.45)]",
+                                  isTargetWork &&
+                                    "hover:border-sky-500/70 hover:bg-sky-500/18",
+                                )}
+                              >
+                                <div className="flex h-full flex-col">
+                                  <div className="flex items-start justify-between gap-1">
+                                    <span className="text-[11px] font-medium text-foreground">
+                                      {date.getDate()}
+                                    </span>
+                                    {day?.leave ? (
+                                      <span className="rounded-full border border-sky-500/30 bg-sky-500/10 px-1.5 py-0.5 text-[8px] font-medium text-sky-300">
+                                        {leaveTypeBadge(day.leave.leaveType)}
+                                      </span>
+                                    ) : isSourceOff ? (
+                                      <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[8px] font-medium text-amber-300">
+                                        OFF
+                                      </span>
+                                    ) : isTargetWork ? (
+                                      <span className="rounded-full border border-sky-500/30 bg-sky-500/10 px-1.5 py-0.5 text-[8px] font-medium text-sky-300">
+                                        TGT
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                  <div className="mt-1.5 flex-1">
+                                    {day?.shift ? (
+                                      <div
+                                        className="rounded-md border px-1.5 py-1"
+                                        style={bookingShiftStyle(day.shift)}
+                                      >
+                                        <p className="text-[11px] font-semibold">
+                                          {day.shift.code}
+                                        </p>
+                                        <p className="truncate text-[9px] opacity-80">
+                                          {formatMinutes(day.scheduledStartMinutes)} -{" "}
+                                          {formatMinutes(day.scheduledEndMinutes)}
+                                        </p>
+                                      </div>
+                                    ) : (
+                                      <div className="rounded-md border border-dashed border-border/60 bg-muted/20 px-1.5 py-1 text-[9px] text-muted-foreground">
+                                        No shift
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                    {calendarLoading ? (
+                      <p className="text-xs text-muted-foreground">Loading calendar…</p>
+                    ) : null}
+                  </CardContent>
+                </Card>
+              ) : (
+                <Card className="border-border/70">
+                  <CardHeader className="border-b border-border/70 pb-3">
                     <div>
-                      <p className="text-sm font-medium">Day Off Preview</p>
-                      <p className="text-sm text-muted-foreground">
-                        Review your current schedule for that date before sending
-                        the request for manager approval.
+                      <CardTitle className="text-base">Preferred Bimonthly Start</CardTitle>
+                      <p className="text-xs text-muted-foreground">
+                        Choose when payroll deduction should start.
                       </p>
                     </div>
-                    {dayOffPreview?.wouldChange ? (
-                      <p className="text-sm font-medium text-emerald-600">
-                        Ready for manager review
-                      </p>
-                    ) : (
-                      <p className="text-sm text-muted-foreground">
-                        {dayOffLoading ? "Loading preview" : "Already day off"}
-                      </p>
-                    )}
-                  </div>
+                  </CardHeader>
+                  <CardContent className="p-4">
+                    <div className="grid gap-3 md:grid-cols-2">
+                      {cashAdvanceStartOptions.map((option) => {
+                        const active = cashPreferredStartDate === option.value;
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => setCashPreferredStartDate(option.value)}
+                            className={cn(
+                              "rounded-xl border p-4 text-left transition",
+                              active
+                                ? "border-primary/70 bg-primary/18 shadow-[inset_0_0_0_1px_hsl(var(--primary)/0.45)]"
+                                : "border-border/70 bg-muted/20 hover:border-primary/40 hover:bg-muted/30",
+                            )}
+                          >
+                            <p className="text-sm font-medium">{option.title}</p>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {option.subtitle}
+                            </p>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
 
-                  <div className="mt-4 grid gap-3 md:grid-cols-2">
-                    <div className="rounded-xl border border-border/60 bg-background p-4">
-                      <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                        Current Schedule
-                      </p>
-                      <p className="mt-2 text-base font-semibold">
-                        {dayOffPreview?.current.shiftLabel ?? "Checking schedule"}
-                      </p>
-                    </div>
-                    <div className="rounded-xl border border-border/60 bg-background p-4">
-                      <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                        Result After Approval
-                      </p>
-                      <p className="mt-2 text-base font-semibold">Day off</p>
-                    </div>
-                  </div>
-                </div>
+            <div className="xl:sticky xl:top-6 xl:self-start">
+              <Card className="border-border/70">
+                <CardHeader className="border-b border-border/70 pb-3">
+                  <CardTitle className="text-base">Selection & Details</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4 p-4">
+                  {requestType === "LEAVE" ? (
+                    <>
+                      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
+                        <div className="rounded-xl border border-border/70 bg-muted/20 p-3">
+                          <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                            Selected range
+                          </p>
+                          <p className="mt-2 text-sm font-medium">
+                            {formatDateRange(leaveStartDate, leaveEndDate)}
+                          </p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {leaveDays || 0} day(s)
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-border/70 bg-muted/20 p-3">
+                          <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                            Remaining
+                          </p>
+                          <p className="mt-2 text-sm font-medium">
+                            {leaveBucket ? Math.max(0, leaveBucket.remaining - leaveDays) : "—"}
+                          </p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            after approval
+                          </p>
+                        </div>
+                      </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="day-off-reason">Reason</Label>
-                  <textarea
-                    id="day-off-reason"
-                    value={dayOffReason}
-                    onChange={(event) => setDayOffReason(event.target.value)}
-                    placeholder="Why are you requesting a day off?"
-                    className="min-h-32 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                  />
-                </div>
-              </>
-            ) : requestType === "SCHEDULE_CHANGE" ? (
-              <>
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="schedule-change-date">Change Date</Label>
-                    <Input
-                      id="schedule-change-date"
-                      type="date"
-                      value={scheduleChangeWorkDate}
-                      onChange={(event) =>
-                        setScheduleChangeWorkDate(event.target.value)
+                      <div className="grid gap-2 sm:grid-cols-3 xl:grid-cols-1">
+                        <div className="rounded-xl border border-border/70 p-3">
+                          <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                            Sick
+                          </p>
+                          <p className="mt-2 text-lg font-semibold">
+                            {leaveSummary?.sick.remaining ?? 0}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            of {leaveSummary?.sick.annualCredits ?? 5}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-border/70 p-3">
+                          <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                            SIL
+                          </p>
+                          <p className="mt-2 text-lg font-semibold">
+                            {leaveSummary?.sil.remaining ?? 0}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            of {leaveSummary?.sil.annualCredits ?? 5}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-border/70 p-3">
+                          <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                            Reset
+                          </p>
+                          <p className="mt-2 text-xs text-foreground">
+                            Sick:{" "}
+                            {leaveSummary
+                              ? monthDayLabel(
+                                  leaveSummary.sick.resetMonth,
+                                  leaveSummary.sick.resetDay,
+                                )
+                              : "—"}
+                          </p>
+                          <p className="text-xs text-foreground">
+                            SIL:{" "}
+                            {leaveSummary
+                              ? monthDayLabel(
+                                  leaveSummary.sil.resetMonth,
+                                  leaveSummary.sil.resetDay,
+                                )
+                              : "—"}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>Leave bucket</Label>
+                        <Select
+                          value={leaveType}
+                          onValueChange={(value) => setLeaveType(value as LeaveRequestType)}
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectGroup>
+                              <SelectLabel>Paid leave</SelectLabel>
+                              {leaveTypeOptions
+                                .filter((option) => option !== "UNPAID")
+                                .map((option) => (
+                                  <SelectItem key={option} value={option}>
+                                    {leaveTypeLabel(option)}
+                                  </SelectItem>
+                                ))}
+                            </SelectGroup>
+                            <SelectSeparator />
+                            <SelectGroup>
+                              <SelectLabel>Other</SelectLabel>
+                              <SelectItem value="UNPAID">
+                                {leaveTypeLabel("UNPAID")}
+                              </SelectItem>
+                            </SelectGroup>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>Reason</Label>
+                        <Textarea
+                          value={leaveReason}
+                          onChange={(event) => setLeaveReason(event.target.value)}
+                          rows={5}
+                        />
+                      </div>
+
+                      {leaveInlineError ? (
+                        <p className="text-sm text-destructive">{leaveInlineError}</p>
+                      ) : null}
+                    </>
+                  ) : null}
+
+                  {requestType === "DAY_OFF" ? (
+                    <>
+                      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
+                        <div className="rounded-xl border border-border/70 bg-muted/20 p-3">
+                          <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                            Source OFF
+                          </p>
+                          <p className="mt-2 text-sm font-medium">
+                            {sourceOffDate ? formatDate(sourceOffDate) : "Pick OFF date"}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-border/70 bg-muted/20 p-3">
+                          <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                            Target workday
+                          </p>
+                          <p className="mt-2 text-sm font-medium">
+                            {targetWorkDate ? formatDate(targetWorkDate) : "Pick target date"}
+                          </p>
+                        </div>
+                      </div>
+
+                      {dayOffPreview ? (
+                        <div className="rounded-xl border border-border/70 bg-muted/20 p-3 text-sm">
+                          <p className="font-medium">Preview</p>
+                          <p className="mt-2 text-xs text-muted-foreground">
+                            Source: {dayOffPreview.source.shiftLabel}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Target: {dayOffPreview.target.shiftLabel}
+                          </p>
+                        </div>
+                      ) : null}
+
+                      <div className="space-y-2">
+                        <Label>Reason</Label>
+                        <Textarea
+                          value={dayOffReason}
+                          onChange={(event) => setDayOffReason(event.target.value)}
+                          rows={5}
+                        />
+                      </div>
+                    </>
+                  ) : null}
+
+                  {requestType === "SCHEDULE_CHANGE" ? (
+                    <>
+                      <div className="rounded-xl border border-border/70 bg-muted/20 p-3">
+                        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                          Selected range
+                        </p>
+                        <p className="mt-2 text-sm font-medium">
+                          {scheduleChangeStartDate && scheduleChangeEndDate
+                            ? `${formatDateRange(
+                                scheduleChangeStartDate,
+                                scheduleChangeEndDate,
+                              )} · ${
+                                countDaysInclusive(
+                                  scheduleChangeStartDate,
+                                  scheduleChangeEndDate,
+                                ) ?? 0
+                              } day(s)`
+                            : "Pick start and end dates"}
+                        </p>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>Replacement shift</Label>
+                        <Select
+                          value={scheduleChangeShiftId}
+                          onValueChange={setScheduleChangeShiftId}
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Pick shift" />
+                          </SelectTrigger>
+                          <SelectContent className="max-h-80">
+                            <SelectGroup>
+                              <SelectLabel>Available shifts</SelectLabel>
+                              {organizedScheduleChangeShifts.map((shift) => (
+                                <SelectItem key={shift.id} value={String(shift.id)}>
+                                  <span className="flex flex-col">
+                                    <span className="font-medium">
+                                      {shift.code} · {shift.name}
+                                    </span>
+                                    <span className="text-xs text-muted-foreground">
+                                      {shift.shiftLabel}
+                                    </span>
+                                  </span>
+                                </SelectItem>
+                              ))}
+                            </SelectGroup>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {selectedShift ? (
+                        <div className="rounded-xl border border-border/70 bg-muted/20 p-3 text-sm">
+                          <p className="font-medium">
+                            {selectedShift.code} · {selectedShift.name}
+                          </p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {selectedShift.shiftLabel}
+                          </p>
+                        </div>
+                      ) : null}
+
+                      <div className="space-y-2">
+                        <Label>Reason</Label>
+                        <Textarea
+                          value={scheduleChangeReason}
+                          onChange={(event) => setScheduleChangeReason(event.target.value)}
+                          rows={5}
+                        />
+                      </div>
+
+                      {scheduleChangePreview && selectedShift ? (
+                        <div className="rounded-xl border border-border/70 bg-muted/20 p-3 text-sm">
+                          <p className="font-medium">Preview</p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {formatDateRange(
+                              scheduleChangePreview.startDate,
+                              scheduleChangePreview.endDate,
+                            )}{" "}
+                            · {scheduleChangePreview.totalDays} day(s)
+                          </p>
+                        </div>
+                      ) : null}
+                    </>
+                  ) : null}
+
+                  {requestType === "SCHEDULE_SWAP" ? (
+                    <>
+                      <div className="rounded-xl border border-border/70 bg-muted/20 p-3">
+                        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                          Swap date
+                        </p>
+                        <p className="mt-2 text-sm font-medium">
+                          {swapWorkDate ? formatDate(swapWorkDate) : "Pick swap date"}
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Same-date swap only.
+                        </p>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>Coworker</Label>
+                        <Select value={swapCoworkerId} onValueChange={setSwapCoworkerId}>
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Pick coworker" />
+                          </SelectTrigger>
+                          <SelectContent className="max-h-80">
+                            <SelectGroup>
+                              <SelectLabel>Available coworkers</SelectLabel>
+                              {organizedSwapCoworkers.map((coworker) => (
+                                <SelectItem
+                                  key={coworker.employeeId}
+                                  value={coworker.employeeId}
+                                >
+                                  <span className="flex flex-col">
+                                    <span className="font-medium">
+                                      {coworker.employeeName}
+                                    </span>
+                                    <span className="text-xs text-muted-foreground">
+                                      {coworker.employeeCode}
+                                    </span>
+                                  </span>
+                                </SelectItem>
+                              ))}
+                            </SelectGroup>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>Reason</Label>
+                        <Textarea
+                          value={swapReason}
+                          onChange={(event) => setSwapReason(event.target.value)}
+                          rows={5}
+                        />
+                      </div>
+
+                      {swapPreview && selectedCoworker ? (
+                        <div className="rounded-xl border border-border/70 bg-muted/20 p-3 text-sm">
+                          <p className="font-medium">Preview</p>
+                          <p className="mt-2 text-xs text-muted-foreground">
+                            Yours: {swapPreview.requester.shiftLabel}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {selectedCoworker.employeeName}: {swapPreview.coworker.shiftLabel}
+                          </p>
+                        </div>
+                      ) : null}
+                    </>
+                  ) : null}
+
+                  {requestType === "CASH_ADVANCE" ? (
+                    <>
+                      <div className="rounded-xl border border-border/70 bg-muted/20 p-3 text-sm">
+                        <p className="font-medium">Payroll note</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Approved requests default to full deduction on next payroll.
+                          Manager can switch to installments during review.
+                        </p>
+                      </div>
+
+                      <div className="rounded-xl border border-border/70 bg-muted/20 p-3 text-sm">
+                        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                          Preferred start
+                        </p>
+                        <p className="mt-2 font-medium">
+                          {cashPreferredStartDate
+                            ? formatDate(cashPreferredStartDate)
+                            : "Pick bimonthly date"}
+                        </p>
+                        {cashPreferredStartDate ? (
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {
+                              cashAdvanceStartOptions.find(
+                                (option) => option.value === cashPreferredStartDate,
+                              )?.subtitle
+                            }
+                          </p>
+                        ) : null}
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>Amount</Label>
+                        <Input
+                          inputMode="decimal"
+                          placeholder="0.00"
+                          value={cashAmount}
+                          onChange={(event) => setCashAmount(event.target.value)}
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>Reason</Label>
+                        <Textarea
+                          value={cashReason}
+                          onChange={(event) => setCashReason(event.target.value)}
+                          rows={5}
+                        />
+                      </div>
+
+                      {cashAmount.trim() ? (
+                        <div className="rounded-xl border border-border/70 bg-muted/20 p-3 text-sm">
+                          <p className="font-medium">
+                            Requested amount: {formatMoney(Number(cashAmount) || 0)}
+                          </p>
+                        </div>
+                      ) : null}
+                    </>
+                  ) : null}
+
+                  {error ? <p className="text-sm text-destructive">{error}</p> : null}
+
+                  <div className="flex flex-col gap-2 border-t border-border/70 pt-4">
+                    <Button
+                      disabled={
+                        submitting ||
+                        !isCalendarSelectionValid ||
+                        (requestType === "LEAVE" && Boolean(leaveInlineError))
                       }
-                    />
+                      onClick={() => void submit()}
+                    >
+                      {submitting ? "Submitting..." : `Submit ${requestTypeLabel(requestType)}`}
+                    </Button>
+                    <Button asChild variant="outline">
+                      <Link href={exitHref}>Cancel</Link>
+                    </Button>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="schedule-change-shift-search">
-                      Requested Shift
-                    </Label>
-                    <div className="relative">
-                      <Input
-                        id="schedule-change-shift-search"
-                        value={scheduleChangeShiftQuery}
-                        onChange={(event) => {
-                          setScheduleChangeShiftQuery(event.target.value);
-                          setScheduleChangeDropdownOpen(true);
-                          if (!event.target.value.trim()) {
-                            setScheduleChangeShiftId("");
-                            setScheduleChangePreview(null);
-                          }
-                        }}
-                        onFocus={() => setScheduleChangeDropdownOpen(true)}
-                        placeholder={
-                          scheduleChangeLoading ? "Loading shifts..." : "Search shift"
-                        }
-                      />
-                      {scheduleChangeDropdownOpen &&
-                      (scheduleChangeShiftQuery.trim() ||
-                        scheduleChangeShifts.length > 0) ? (
-                        <div className="absolute z-20 mt-2 max-h-64 w-full overflow-auto rounded-xl border border-border/70 bg-background shadow-lg">
-                          {scheduleChangeShifts.length > 0 ? (
-                            scheduleChangeShifts.map((shift) => (
-                              <button
-                                key={shift.id}
-                                type="button"
-                                className="flex w-full flex-col items-start gap-1 px-3 py-3 text-left hover:bg-muted/40"
-                                onMouseDown={(event) => event.preventDefault()}
-                                onClick={() => {
-                                  setScheduleChangeShiftId(String(shift.id));
-                                  setScheduleChangeShiftQuery(shift.name);
-                                  setScheduleChangeDropdownOpen(false);
-                                }}
-                              >
-                                <span className="font-medium">{shift.name}</span>
-                                <span className="text-sm text-muted-foreground">
-                                  {shift.shiftLabel}
-                                </span>
-                              </button>
-                            ))
-                          ) : (
-                            <p className="px-3 py-3 text-sm text-muted-foreground">
-                              No shifts found.
-                            </p>
-                          )}
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <p className="text-sm font-medium">Schedule Change Preview</p>
-                      <p className="text-sm text-muted-foreground">
-                        Compare your current schedule with the shift you want to
-                        request before sending it for manager review.
-                      </p>
-                    </div>
-                    {scheduleChangePreview ? (
-                      <p className="text-sm font-medium text-emerald-600">
-                        Ready for manager review
-                      </p>
-                    ) : (
-                      <p className="text-sm text-muted-foreground">
-                        Preview pending
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="mt-4 grid gap-3 md:grid-cols-2">
-                    <div className="rounded-xl border border-border/60 bg-background p-4">
-                      <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                        Current Schedule
-                      </p>
-                      <p className="mt-2 text-base font-semibold">
-                        {scheduleChangePreview?.current.shiftLabel ??
-                          "Choose requested shift"}
-                      </p>
-                    </div>
-                    <div className="rounded-xl border border-border/60 bg-background p-4">
-                      <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                        Requested Schedule
-                      </p>
-                      <p className="mt-2 text-base font-semibold">
-                        {scheduleChangePreview?.requested.shiftLabel ??
-                          "Waiting for preview"}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="schedule-change-reason">Reason</Label>
-                  <textarea
-                    id="schedule-change-reason"
-                    value={scheduleChangeReason}
-                    onChange={(event) => setScheduleChangeReason(event.target.value)}
-                    placeholder="Why are you requesting this schedule change?"
-                    className="min-h-32 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                  />
-                </div>
-              </>
-            ) : requestType === "SCHEDULE_SWAP" ? (
-              <>
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="swap-work-date">Swap Date</Label>
-                    <Input
-                      id="swap-work-date"
-                      type="date"
-                      value={swapWorkDate}
-                      onChange={(event) => setSwapWorkDate(event.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="swap-coworker-search">Coworker</Label>
-                    <div className="relative">
-                      <Input
-                        id="swap-coworker-search"
-                        value={swapCoworkerQuery}
-                        onChange={(event) => {
-                          setSwapCoworkerQuery(event.target.value);
-                          setSwapCoworkerDropdownOpen(true);
-                          if (!event.target.value.trim()) {
-                            setSwapCoworkerId("");
-                            setSwapPreview(null);
-                          }
-                        }}
-                        onFocus={() => setSwapCoworkerDropdownOpen(true)}
-                        placeholder={
-                          swapLoading ? "Loading coworkers..." : "Search coworker"
-                        }
-                      />
-                      {swapCoworkerDropdownOpen &&
-                      (swapCoworkerQuery.trim() || swapCoworkers.length > 0) ? (
-                        <div className="absolute z-20 mt-2 max-h-64 w-full overflow-auto rounded-xl border border-border/70 bg-background shadow-lg">
-                          {swapCoworkers.length > 0 ? (
-                            swapCoworkers.map((coworker) => (
-                              <button
-                                key={coworker.employeeId}
-                                type="button"
-                                className="flex w-full flex-col items-start gap-1 px-3 py-3 text-left hover:bg-muted/40"
-                                onMouseDown={(event) => event.preventDefault()}
-                                onClick={() => {
-                                  setSwapCoworkerId(coworker.employeeId);
-                                  setSwapCoworkerQuery(
-                                    `${coworker.employeeCode} · ${coworker.employeeName}`,
-                                  );
-                                  setSwapCoworkerDropdownOpen(false);
-                                }}
-                              >
-                                <span className="font-medium">
-                                  {coworker.employeeName}
-                                </span>
-                                <span className="text-sm text-muted-foreground">
-                                  {coworker.employeeCode}
-                                </span>
-                              </button>
-                            ))
-                          ) : (
-                            <p className="px-3 py-3 text-sm text-muted-foreground">
-                              No coworkers found.
-                            </p>
-                          )}
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <p className="text-sm font-medium">Swap Preview</p>
-                      <p className="text-sm text-muted-foreground">
-                        Pick a date and coworker to preview both schedules before
-                        you submit the request.
-                      </p>
-                    </div>
-                    {swapPreview ? (
-                      <p className="text-sm font-medium text-emerald-600">
-                        Ready for coworker review
-                      </p>
-                    ) : (
-                      <p className="text-sm text-muted-foreground">
-                        Preview pending
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="mt-4 grid gap-3 md:grid-cols-2">
-                    <div className="rounded-xl border border-border/60 bg-background p-4">
-                      <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                        Your Current Schedule
-                      </p>
-                      <p className="mt-2 text-base font-semibold">
-                        {swapPreview?.requester.shiftLabel ?? "Choose coworker"}
-                      </p>
-                    </div>
-                    <div className="rounded-xl border border-border/60 bg-background p-4">
-                      <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                        Coworker Current Schedule
-                      </p>
-                      <p className="mt-2 text-base font-semibold">
-                        {swapPreview?.coworker.shiftLabel ?? "Waiting for preview"}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="swap-reason">Reason</Label>
-                  <textarea
-                    id="swap-reason"
-                    value={swapReason}
-                    onChange={(event) => setSwapReason(event.target.value)}
-                    placeholder="Why are you requesting this schedule swap?"
-                    className="min-h-32 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                  />
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="cash-advance-amount">Requested Amount</Label>
-                    <Input
-                      id="cash-advance-amount"
-                      inputMode="decimal"
-                      value={amount}
-                      onChange={(event) => setAmount(event.target.value)}
-                      placeholder="0.00"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="cash-advance-repayment">
-                      Repayment Per Payroll
-                    </Label>
-                    <Input
-                      id="cash-advance-repayment"
-                      inputMode="decimal"
-                      value={repaymentPerPayroll}
-                      onChange={(event) => setRepaymentPerPayroll(event.target.value)}
-                      placeholder="0.00"
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="cash-advance-start-date">
-                    Preferred Start Date
-                  </Label>
-                  <Input
-                    id="cash-advance-start-date"
-                    type="date"
-                    value={preferredStartDate}
-                    onChange={(event) => setPreferredStartDate(event.target.value)}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    This becomes the deduction start date if your request is
-                    approved.
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="cash-advance-reason">Reason</Label>
-                  <textarea
-                    id="cash-advance-reason"
-                    value={cashReason}
-                    onChange={(event) => setCashReason(event.target.value)}
-                    placeholder="Why are you requesting this cash advance?"
-                    className="min-h-32 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                  />
-                </div>
-              </>
-            )}
-
-            {error ? <p className="text-sm text-destructive">{error}</p> : null}
-
-            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => router.push(exitHref)}
-                disabled={submitting}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                onClick={() => void handleSubmit()}
-                disabled={submitDisabled}
-              >
-                Submit Request
-              </Button>
+                </CardContent>
+              </Card>
             </div>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-sm">
-          <CardHeader>
-            <CardTitle className="text-lg">Request Preview</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="rounded-xl border border-border/70 bg-muted/20 px-4 py-3">
-              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                Active Request Type
-              </p>
-              <p className="mt-2 text-lg font-semibold">
-                {requestTypeLabel(requestType)}
-              </p>
-            </div>
-
-            {previewRows.map((item) => (
-              <div
-                key={item.label}
-                className="rounded-xl border border-border/70 bg-muted/20 px-4 py-3"
-              >
-                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  {item.label}
-                </p>
-                <p className="mt-2 text-lg font-semibold">{item.value}</p>
-              </div>
-            ))}
-
-            {requestType === "DAY_OFF" ? (
-              <div className="rounded-xl border border-border/70 bg-muted/20 px-4 py-3">
-                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  After Approval
-                </p>
-                <div className="mt-3 space-y-3">
-                  <div className="rounded-lg border border-border/60 bg-background p-3">
-                    <p className="text-sm text-muted-foreground">
-                      Current schedule
-                    </p>
-                    <p className="mt-1 font-semibold">
-                      {dayOffPreview?.current.shiftLabel ?? "Checking schedule"}
-                    </p>
-                  </div>
-                  <div className="rounded-lg border border-border/60 bg-background p-3">
-                    <p className="text-sm text-muted-foreground">
-                      Approved result
-                    </p>
-                    <p className="mt-1 font-semibold">Day off</p>
-                  </div>
-                </div>
-              </div>
-            ) : requestType === "SCHEDULE_CHANGE" ? (
-              <div className="rounded-xl border border-border/70 bg-muted/20 px-4 py-3">
-                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  After Approval
-                </p>
-                <div className="mt-3 space-y-3">
-                  <div className="rounded-lg border border-border/60 bg-background p-3">
-                    <p className="text-sm text-muted-foreground">
-                      Current schedule
-                    </p>
-                    <p className="mt-1 font-semibold">
-                      {scheduleChangePreview?.current.shiftLabel ??
-                        "Waiting for preview"}
-                    </p>
-                  </div>
-                  <div className="rounded-lg border border-border/60 bg-background p-3">
-                    <p className="text-sm text-muted-foreground">
-                      Requested schedule
-                    </p>
-                    <p className="mt-1 font-semibold">
-                      {scheduleChangePreview?.requested.shiftLabel ??
-                        "Waiting for preview"}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            ) : requestType === "SCHEDULE_SWAP" ? (
-              <div className="rounded-xl border border-border/70 bg-muted/20 px-4 py-3">
-                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  After Approval
-                </p>
-                <div className="mt-3 space-y-3">
-                  <div className="rounded-lg border border-border/60 bg-background p-3">
-                    <p className="text-sm text-muted-foreground">Your new schedule</p>
-                    <p className="mt-1 font-semibold">
-                      {swapPreview?.coworker.shiftLabel ?? "Waiting for preview"}
-                    </p>
-                  </div>
-                  <div className="rounded-lg border border-border/60 bg-background p-3">
-                    <p className="text-sm text-muted-foreground">
-                      Coworker&apos;s new schedule
-                    </p>
-                    <p className="mt-1 font-semibold">
-                      {swapPreview?.requester.shiftLabel ?? "Waiting for preview"}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            ) : null}
-
-            <div className="rounded-xl border border-dashed border-border/70 bg-background px-4 py-3 text-sm text-muted-foreground">
-              {requestType === "LEAVE"
-                ? "Approved leave requests are recorded in your request history for manager review tracking."
-                : requestType === "DAY_OFF"
-                  ? "Manager approval clears the scheduled shift for that date and applies a one-day rest-day override."
-                : requestType === "SCHEDULE_CHANGE"
-                  ? "Manager approval applies the requested one-day schedule override and updates the day schedule snapshot if attendance already exists."
-                : requestType === "SCHEDULE_SWAP"
-                  ? "Your coworker must accept the swap before it reaches the manager review queue. Manager approval then applies both day overrides."
-                  : "Manager approval creates the linked cash advance deduction automatically. Payroll deductions begin from the approved start date."}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

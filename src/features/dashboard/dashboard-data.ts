@@ -23,15 +23,24 @@ import {
 } from "@/actions/payroll/payroll-shared";
 import type { PayrollPayslipSummary, PayrollRunSummary } from "@/types/payroll";
 import {
+  buildCashAdvanceRequestSelect,
+  buildDayOffRequestSelect,
+  buildScheduleChangeRequestSelect,
+  hasCashAdvanceApprovalColumns,
+  hasDayOffExtendedColumns,
+  hasScheduleChangeRangeColumns,
   PAID_LEAVE_ALLOWANCE_PER_YEAR,
   PAID_SICK_LEAVE_ALLOWANCE_PER_YEAR,
   employeeRequestSelect,
   reviewedBySelect,
 } from "@/actions/requests/requests-core-shared";
 import {
+  type CashAdvanceRequestRecordCompat,
+  type DayOffRequestRecordCompat,
   serializeCashAdvanceRequest,
   serializeDayOffRequest,
   serializeLeaveRequest,
+  type ScheduleChangeRequestRecordCompat,
   serializeScheduleChangeRequest,
   serializeScheduleSwapRequest,
 } from "@/actions/requests/requests-serializers-shared";
@@ -76,6 +85,10 @@ import { normalizeRole, type AppRole } from "@/lib/rbac";
 import { TZ, endOfZonedDay, formatZonedTime, startOfZonedDay } from "@/lib/timezone";
 
 type DashboardTone = "primary" | "info" | "success" | "warning" | "danger";
+
+const isMissingColumnError = (error: unknown) =>
+  error instanceof Prisma.PrismaClientKnownRequestError &&
+  /column .* does not exist/i.test(error.message);
 
 export type DashboardIconKey =
   | "activity"
@@ -200,19 +213,6 @@ const payrollRunDashboardInclude = {
   },
 } satisfies Prisma.PayrollInclude;
 
-const cashAdvanceDashboardInclude = {
-  employee: { select: employeeRequestSelect },
-  reviewedBy: { select: reviewedBySelect },
-  deductionAssignment: {
-    select: {
-      id: true,
-      status: true,
-      effectiveFrom: true,
-      remainingBalance: true,
-    },
-  },
-} satisfies Prisma.CashAdvanceRequestInclude;
-
 const leaveRequestDashboardInclude = {
   employee: { select: employeeRequestSelect },
   reviewedBy: { select: reviewedBySelect },
@@ -224,16 +224,6 @@ const leaveRequestDashboardInclude = {
   },
 } satisfies Prisma.LeaveRequestInclude;
 
-const dayOffRequestDashboardInclude = {
-  employee: { select: employeeRequestSelect },
-  reviewedBy: { select: reviewedBySelect },
-} satisfies Prisma.DayOffRequestInclude;
-
-const scheduleChangeDashboardInclude = {
-  employee: { select: employeeRequestSelect },
-  reviewedBy: { select: reviewedBySelect },
-} satisfies Prisma.ScheduleChangeRequestInclude;
-
 const scheduleSwapDashboardInclude = {
   requesterEmployee: { select: employeeRequestSelect },
   coworkerEmployee: { select: employeeRequestSelect },
@@ -244,20 +234,8 @@ type DashboardPayrollRunRecord = Prisma.PayrollGetPayload<{
   include: typeof payrollRunDashboardInclude;
 }>;
 
-type DashboardCashAdvanceRecord = Prisma.CashAdvanceRequestGetPayload<{
-  include: typeof cashAdvanceDashboardInclude;
-}>;
-
 type DashboardLeaveRequestRecord = Prisma.LeaveRequestGetPayload<{
   include: typeof leaveRequestDashboardInclude;
-}>;
-
-type DashboardDayOffRequestRecord = Prisma.DayOffRequestGetPayload<{
-  include: typeof dayOffRequestDashboardInclude;
-}>;
-
-type DashboardScheduleChangeRecord = Prisma.ScheduleChangeRequestGetPayload<{
-  include: typeof scheduleChangeDashboardInclude;
 }>;
 
 type DashboardScheduleSwapRecord = Prisma.ScheduleSwapRequestGetPayload<{
@@ -535,15 +513,44 @@ const loadCashAdvanceRequests = async (input: {
   where?: Prisma.CashAdvanceRequestWhereInput;
   limit?: number;
 }): Promise<CashAdvanceRequestRow[]> => {
-  const rows = await db.cashAdvanceRequest.findMany({
-    where: input.where,
-    include: cashAdvanceDashboardInclude,
-    orderBy: [{ status: "asc" }, { submittedAt: "desc" }, { createdAt: "desc" }],
-    take: input.limit && input.limit > 0 ? input.limit : undefined,
-  });
+  const includeApprovalColumns = await hasCashAdvanceApprovalColumns();
+  let rows;
+
+  try {
+    rows = await db.cashAdvanceRequest.findMany({
+      where: input.where,
+      select: buildCashAdvanceRequestSelect(includeApprovalColumns),
+      orderBy: [{ status: "asc" }, { submittedAt: "desc" }, { createdAt: "desc" }],
+      take: input.limit && input.limit > 0 ? input.limit : undefined,
+    });
+  } catch (error) {
+    if (!isMissingColumnError(error)) {
+      throw error;
+    }
+
+    rows = await db.cashAdvanceRequest.findMany({
+      where: input.where,
+      select: buildCashAdvanceRequestSelect(false, false),
+      orderBy: [{ status: "asc" }, { submittedAt: "desc" }, { createdAt: "desc" }],
+      take: input.limit && input.limit > 0 ? input.limit : undefined,
+    });
+  }
 
   return rows.map((row) =>
-    serializeCashAdvanceRequest(row as DashboardCashAdvanceRecord),
+    serializeCashAdvanceRequest({
+      ...row,
+      approvedAmount: "approvedAmount" in row ? row.approvedAmount : null,
+      approvedDeductionMode:
+        "approvedDeductionMode" in row ? row.approvedDeductionMode : null,
+      approvedRepaymentPerPayroll:
+        "approvedRepaymentPerPayroll" in row
+          ? row.approvedRepaymentPerPayroll
+          : null,
+      approvedEffectiveFrom:
+        "approvedEffectiveFrom" in row ? row.approvedEffectiveFrom : null,
+      deductionAssignment:
+        "deductionAssignment" in row ? row.deductionAssignment : null,
+    } as CashAdvanceRequestRecordCompat),
   );
 };
 
@@ -567,15 +574,47 @@ const loadDayOffRequests = async (input: {
   where?: Prisma.DayOffRequestWhereInput;
   limit?: number;
 }): Promise<DayOffRequestRow[]> => {
-  const rows = await db.dayOffRequest.findMany({
-    where: input.where,
-    include: dayOffRequestDashboardInclude,
-    orderBy: [{ status: "asc" }, { submittedAt: "desc" }, { createdAt: "desc" }],
-    take: input.limit && input.limit > 0 ? input.limit : undefined,
-  });
+  const includeExtendedColumns = await hasDayOffExtendedColumns();
+  let rows;
+
+  try {
+    rows = await db.dayOffRequest.findMany({
+      where: input.where,
+      select: buildDayOffRequestSelect(includeExtendedColumns),
+      orderBy: [{ status: "asc" }, { submittedAt: "desc" }, { createdAt: "desc" }],
+      take: input.limit && input.limit > 0 ? input.limit : undefined,
+    });
+  } catch (error) {
+    if (!isMissingColumnError(error)) {
+      throw error;
+    }
+
+    rows = await db.dayOffRequest.findMany({
+      where: input.where,
+      select: buildDayOffRequestSelect(false),
+      orderBy: [{ status: "asc" }, { submittedAt: "desc" }, { createdAt: "desc" }],
+      take: input.limit && input.limit > 0 ? input.limit : undefined,
+    });
+  }
 
   return rows.map((row) =>
-    serializeDayOffRequest(row as DashboardDayOffRequestRecord),
+    serializeDayOffRequest({
+      ...row,
+      sourceOffDate: "sourceOffDate" in row ? row.sourceOffDate : null,
+      targetWorkDate: "targetWorkDate" in row ? row.targetWorkDate : null,
+      sourceShiftIdSnapshot:
+        "sourceShiftIdSnapshot" in row ? row.sourceShiftIdSnapshot : null,
+      sourceShiftCodeSnapshot:
+        "sourceShiftCodeSnapshot" in row ? row.sourceShiftCodeSnapshot : null,
+      sourceShiftNameSnapshot:
+        "sourceShiftNameSnapshot" in row ? row.sourceShiftNameSnapshot : null,
+      sourceStartMinutesSnapshot:
+        "sourceStartMinutesSnapshot" in row ? row.sourceStartMinutesSnapshot : null,
+      sourceEndMinutesSnapshot:
+        "sourceEndMinutesSnapshot" in row ? row.sourceEndMinutesSnapshot : null,
+      sourceSpansMidnightSnapshot:
+        "sourceSpansMidnightSnapshot" in row ? row.sourceSpansMidnightSnapshot : null,
+    } as DayOffRequestRecordCompat),
   );
 };
 
@@ -583,15 +622,16 @@ const loadScheduleChangeRequests = async (input: {
   where?: Prisma.ScheduleChangeRequestWhereInput;
   limit?: number;
 }): Promise<ScheduleChangeRequestRow[]> => {
+  const includeRangeColumns = await hasScheduleChangeRangeColumns();
   const rows = await db.scheduleChangeRequest.findMany({
     where: input.where,
-    include: scheduleChangeDashboardInclude,
+    select: buildScheduleChangeRequestSelect(includeRangeColumns),
     orderBy: [{ status: "asc" }, { submittedAt: "desc" }, { createdAt: "desc" }],
     take: input.limit && input.limit > 0 ? input.limit : undefined,
   });
 
   return rows.map((row) =>
-    serializeScheduleChangeRequest(row as DashboardScheduleChangeRecord),
+    serializeScheduleChangeRequest(row as ScheduleChangeRequestRecordCompat),
   );
 };
 
@@ -785,7 +825,7 @@ const buildManagerRequestItems = (
     items.push({
       id: row.id,
       title: `${requestTypeLabel("CASH_ADVANCE")} • ${row.employeeName}`,
-      description: `${formatMoney(row.amount)} • starts ${formatRequestDate(row.preferredStartDate)}`,
+      description: `${formatMoney(row.amount)} • next payroll deduction`,
       meta: `${row.employeeCode} • Submitted ${formatRequestDate(row.submittedAt)}`,
       icon: "banknote",
       href: "/manager/requests",
@@ -815,7 +855,7 @@ const buildManagerRequestItems = (
     items.push({
       id: row.id,
       title: `${requestTypeLabel("DAY_OFF")} • ${row.employeeName}`,
-      description: `${formatRequestDate(row.workDate)} • ${row.currentShiftLabel}`,
+      description: `Move OFF from ${formatRequestDate(row.sourceOffDate)} to ${formatRequestDate(row.targetWorkDate)}`,
       meta: `${row.employeeCode} • Submitted ${formatRequestDate(row.submittedAt)}`,
       icon: "calendar",
       href: "/manager/requests",
@@ -829,7 +869,7 @@ const buildManagerRequestItems = (
     items.push({
       id: row.id,
       title: `${requestTypeLabel("SCHEDULE_CHANGE")} • ${row.employeeName}`,
-      description: `${formatRequestDate(row.workDate)} • ${row.requestedShiftLabel}`,
+      description: `${formatRequestDateRange(row.startDate, row.endDate)} • ${row.requestedShiftLabel}`,
       meta: `${row.employeeCode} • Submitted ${formatRequestDate(row.submittedAt)}`,
       icon: "clock",
       href: "/manager/requests",
@@ -869,7 +909,7 @@ const buildEmployeeRequestItems = (
     items.push({
       id: row.id,
       title: requestTypeLabel("CASH_ADVANCE"),
-      description: `${formatMoney(row.amount)} • starts ${formatRequestDate(row.preferredStartDate)}`,
+      description: `${formatMoney(row.amount)} • next payroll deduction`,
       meta: `Submitted ${formatRequestDate(row.submittedAt)}`,
       icon: "banknote",
       href: "/employee/requests",
@@ -899,7 +939,7 @@ const buildEmployeeRequestItems = (
     items.push({
       id: row.id,
       title: requestTypeLabel("DAY_OFF"),
-      description: `${formatRequestDate(row.workDate)} • ${row.currentShiftLabel}`,
+      description: `Move OFF from ${formatRequestDate(row.sourceOffDate)} to ${formatRequestDate(row.targetWorkDate)}`,
       meta: `Submitted ${formatRequestDate(row.submittedAt)}`,
       icon: "calendar",
       href: "/employee/requests",
@@ -913,7 +953,7 @@ const buildEmployeeRequestItems = (
     items.push({
       id: row.id,
       title: requestTypeLabel("SCHEDULE_CHANGE"),
-      description: `${formatRequestDate(row.workDate)} • ${row.requestedShiftLabel}`,
+      description: `${formatRequestDateRange(row.startDate, row.endDate)} • ${row.requestedShiftLabel}`,
       meta: `Submitted ${formatRequestDate(row.submittedAt)}`,
       icon: "clock",
       href: "/employee/requests",

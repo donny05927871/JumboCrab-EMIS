@@ -5,66 +5,84 @@ import { DateRange } from "react-day-picker";
 import { TZ } from "@/lib/timezone";
 import { useToast } from "@/components/ui/toast-provider";
 import {
-  createPattern,
-  deletePattern as deletePatternAction,
-  deletePatternAssignment,
-  listPatternAssignments,
-  updatePattern,
-} from "@/actions/schedule/patterns-action";
-import {
-  assignPatternToEmployee,
   deleteScheduleOverride,
   getScheduleSnapshot,
+  getWeekPlannerSnapshot,
   listScheduleOverrides,
+  saveWeekPlannerAssignments,
   upsertScheduleOverride,
 } from "@/actions/schedule/schedule-action";
-import {
-  createShift,
-  deleteShift,
-  updateShift,
-} from "@/actions/schedule/shifts-action";
+import { createShift, deleteShift, updateShift } from "@/actions/schedule/shifts-action";
 import { DailyScheduleCard } from "./daily-schedule-card";
-import { PatternEditState, PatternsSection } from "./patterns-section";
 import { OverridesSection } from "./overrides-section";
 import { ShiftEditState, ShiftsSection } from "./shifts-section";
+import { WeekPlannerSection } from "./week-planner-section";
 import {
+  applyWeekPlannerShiftMap,
+  countWeekPlannerUnassignedDays,
+  hydrateWeekPlannerRowShifts,
+  isWeekPlannerDayEditable,
+  makeDate,
   minutesToTimeInput,
   normalizeOverride,
-  normalizePattern,
   normalizeShift,
-  OverrideRow,
-  Pattern,
-  PatternAssignment,
-  ScheduleEntry,
-  ShiftLite,
-  todayISO,
-  toDateInputValue,
-  makeDate,
+  normalizeWeekPlannerSnapshot,
+    OverrideRow,
+    PlannerDepartmentOption,
+    plannerDateInputValue,
+    ScheduleEntry,
+    ShiftLite,
+    todayISO,
+    toDateInputValue,
+    WeekPlannerAlternatePair,
+    WeekPlannerBulkActionInput,
+    WeekPlannerDayOffToolInput,
+    WeekPlannerDayKey,
+    WeekPlannerRow,
+  weekPlannerDayKeys,
+  weekPlannerRowToShiftMap,
+  WeekShiftMap,
 } from "@/types/schedule-types";
 
 type ScheduleBoardProps = {
   mode?: "full" | "overrides" | "patterns";
 };
 
+const areWeekShiftMapsEqual = (left: WeekShiftMap, right: WeekShiftMap) =>
+  weekPlannerDayKeys.every((dayKey) => (left[dayKey] ?? null) === (right[dayKey] ?? null));
+
 export function ScheduleBoard({ mode = "full" }: ScheduleBoardProps) {
   const toast = useToast();
   const [date, setDate] = useState(todayISO());
   const [entries, setEntries] = useState<ScheduleEntry[]>([]);
-  const [patterns, setPatterns] = useState<Pattern[]>([]);
-  const [patternAssignments, setPatternAssignments] = useState<
-    PatternAssignment[]
-  >([]);
   const [shifts, setShifts] = useState<ShiftLite[]>([]);
   const [overrides, setOverrides] = useState<OverrideRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [assignEmployeeId, setAssignEmployeeId] = useState("");
-  const [assignPatternId, setAssignPatternId] = useState("");
-  const [assignEffective, setAssignEffective] = useState(todayISO());
-  const [assignSaving, setAssignSaving] = useState(false);
-  const [assignError, setAssignError] = useState<string | null>(null);
-  const [assignSuccess, setAssignSuccess] = useState<string | null>(null);
+  const [plannerWeekStart, setPlannerWeekStart] = useState(plannerDateInputValue(todayISO()));
+  const [plannerCompareWeekStart, setPlannerCompareWeekStart] = useState(
+    plannerDateInputValue(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)),
+  );
+  const [plannerDepartmentId, setPlannerDepartmentId] = useState("");
+  const [plannerEmployeeSearch, setPlannerEmployeeSearch] = useState("");
+  const [plannerSelectedEmployeeIds, setPlannerSelectedEmployeeIds] = useState<string[]>([]);
+  const [plannerRowCacheByWeek, setPlannerRowCacheByWeek] = useState<
+    Record<string, Record<string, WeekPlannerRow>>
+  >({});
+  const [plannerDraftShiftMapByWeek, setPlannerDraftShiftMapByWeek] = useState<
+    Record<string, Record<string, WeekShiftMap>>
+  >({});
+  const [plannerDepartments, setPlannerDepartments] = useState<PlannerDepartmentOption[]>([]);
+  const [plannerScheduleWeekOptions, setPlannerScheduleWeekOptions] = useState<
+    Array<{ weekStart: string; isAssigned: boolean; unassignedCount: number }>
+  >([]);
+  const [plannerReferenceWeekOptions, setPlannerReferenceWeekOptions] = useState<
+    Array<{ weekStart: string; isAssigned: boolean; unassignedCount: number }>
+  >([]);
+  const [plannerLoading, setPlannerLoading] = useState(false);
+  const [plannerSaving, setPlannerSaving] = useState(false);
+  const [plannerError, setPlannerError] = useState<string | null>(null);
 
   const [overrideEmployeeId, setOverrideEmployeeId] = useState("");
   const [overrideShiftId, setOverrideShiftId] = useState<string>("");
@@ -74,14 +92,14 @@ export function ScheduleBoard({ mode = "full" }: ScheduleBoardProps) {
   const overrideSource = "MANUAL";
   const [overrideIsRange, setOverrideIsRange] = useState(false);
   const [overrideEndDate, setOverrideEndDate] = useState<string | null>(null);
-  const [editingOverride, setEditingOverride] = useState<OverrideRow | null>(
-    null
-  );
+  const [editingOverride, setEditingOverride] = useState<OverrideRow | null>(null);
   const [overrideEditOpen, setOverrideEditOpen] = useState(false);
   const [overridePickerOpen, setOverridePickerOpen] = useState(false);
 
   const [shiftCode, setShiftCode] = useState("");
   const [shiftName, setShiftName] = useState("");
+  const [shiftColorHex, setShiftColorHex] = useState("");
+  const [shiftIsDayOff, setShiftIsDayOff] = useState(false);
   const [shiftStart, setShiftStart] = useState("09:00");
   const [shiftEnd, setShiftEnd] = useState("18:00");
   const [shiftSpansMidnight, setShiftSpansMidnight] = useState(false);
@@ -91,55 +109,31 @@ export function ScheduleBoard({ mode = "full" }: ScheduleBoardProps) {
   const [shiftSaving, setShiftSaving] = useState(false);
   const [shiftError, setShiftError] = useState<string | null>(null);
 
-  const [patternCode, setPatternCode] = useState("");
-  const [patternName, setPatternName] = useState("");
-  const [dayShifts, setDayShifts] = useState<Record<string, string>>({
-    sunShiftId: "",
-    monShiftId: "",
-    tueShiftId: "",
-    wedShiftId: "",
-    thuShiftId: "",
-    friShiftId: "",
-    satShiftId: "",
-  });
-  const [patternSaving, setPatternSaving] = useState(false);
-  const [patternError, setPatternError] = useState<string | null>(null);
-
   const [editingShiftId, setEditingShiftId] = useState<number | null>(null);
   const [shiftEdit, setShiftEdit] = useState<ShiftEditState | null>(null);
   const [shiftEditSaving, setShiftEditSaving] = useState(false);
   const [shiftEditError, setShiftEditError] = useState<string | null>(null);
 
-  const [editingPatternId, setEditingPatternId] = useState<string | null>(null);
-  const [patternEdit, setPatternEdit] = useState<PatternEditState | null>(null);
-  const [patternEditSaving, setPatternEditSaving] = useState(false);
-  const [patternEditError, setPatternEditError] = useState<string | null>(null);
-  const [patternEditOpen, setPatternEditOpen] = useState(false);
-
   const showSchedule = mode === "full";
-  const showAssignPattern = mode !== "overrides";
-  const showCreatePattern = mode !== "overrides";
   const showOverrideForm = mode !== "patterns";
   const showOverrideTables = mode !== "patterns";
   const showShifts = mode === "full";
-  const showWeeklyPatterns = mode !== "overrides";
-  const showPatternsUI =
-    showAssignPattern || showCreatePattern || showWeeklyPatterns;
+  const showWeekPlanner = mode === "patterns";
+  const hasDayOffShift = useMemo(
+    () => shifts.some((shift) => shift.isDayOff),
+    [shifts],
+  );
 
   const countDays = (start: string, end: string) => {
     const s = new Date(start);
     const e = new Date(end);
     if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) return 0;
-    const diff = Math.floor(
-      (e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24)
-    );
+    const diff = Math.floor((e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24));
     return diff >= 0 ? diff + 1 : 0;
   };
 
   const overrideDaysCount =
-    overrideIsRange && overrideEndDate
-      ? countDays(overrideDate, overrideEndDate)
-      : 1;
+    overrideIsRange && overrideEndDate ? countDays(overrideDate, overrideEndDate) : 1;
 
   const selectedRange: DateRange = {
     from: makeDate(overrideDate),
@@ -151,13 +145,10 @@ export function ScheduleBoard({ mode = "full" }: ScheduleBoardProps) {
       setLoading(true);
       setError(null);
       setShiftEditError(null);
-      setPatternEditError(null);
-      const [scheduleResult, overrideResult, assignmentsResult] =
-        await Promise.all([
-          getScheduleSnapshot(date),
-          listScheduleOverrides({ start: date }),
-          listPatternAssignments(),
-        ]);
+      const [scheduleResult, overrideResult] = await Promise.all([
+        getScheduleSnapshot(date),
+        listScheduleOverrides({ start: date }),
+      ]);
       if (!scheduleResult.success) {
         throw new Error(scheduleResult.error || "Failed to load schedule");
       }
@@ -166,34 +157,15 @@ export function ScheduleBoard({ mode = "full" }: ScheduleBoardProps) {
       }
 
       setEntries(
-        (
-          (scheduleResult.schedule ?? []) as Array<
-            ScheduleEntry & { shift?: ShiftLite | null }
-          >
-        ).map((entry) => ({
-          ...entry,
-          shift: entry.shift ? normalizeShift(entry.shift) : null,
-        }))
+        ((scheduleResult.schedule ?? []) as Array<ScheduleEntry & { shift?: ShiftLite | null }>).map(
+          (entry) => ({
+            ...entry,
+            shift: entry.shift ? normalizeShift(entry.shift) : null,
+          }),
+        ),
       );
-      setPatterns((scheduleResult.patterns ?? []).map(normalizePattern));
       setShifts((scheduleResult.shifts ?? []).map(normalizeShift));
       setOverrides((overrideResult.data ?? []).map(normalizeOverride));
-
-      if (assignmentsResult.success && Array.isArray(assignmentsResult.data)) {
-        setPatternAssignments(
-          (
-            assignmentsResult.data as Array<
-              PatternAssignment & { pattern?: Pattern | null; isLatest?: boolean }
-            >
-          ).map((a) => ({
-            ...a,
-            pattern: a.pattern ? normalizePattern(a.pattern) : null,
-            isLatest: a.isLatest,
-          }))
-        );
-      } else {
-        setPatternAssignments([]);
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load schedule");
     } finally {
@@ -201,24 +173,125 @@ export function ScheduleBoard({ mode = "full" }: ScheduleBoardProps) {
     }
   };
 
-  useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const loadPlanner = async () => {
+    if (!showWeekPlanner) return;
+    try {
+      setPlannerLoading(true);
+      setPlannerError(null);
+      const result = await getWeekPlannerSnapshot({
+        weekStart: plannerWeekStart,
+        compareWeekStart: plannerCompareWeekStart,
+      });
+      if (!result.success || !result.data) {
+        throw new Error(result.error || "Failed to load week planner snapshot");
+      }
+      const snapshot = normalizeWeekPlannerSnapshot(result.data);
+      setPlannerRowCacheByWeek((prev) => ({
+        ...prev,
+        [plannerWeekStart]: Object.fromEntries(
+          snapshot.rows.map((row) => [row.employee.employeeId, row] as const),
+        ),
+      }));
+      setPlannerDepartments(snapshot.departments);
+      setShifts(snapshot.shifts);
+      setPlannerScheduleWeekOptions(snapshot.scheduleWeekOptions);
+      setPlannerReferenceWeekOptions(snapshot.referenceWeekOptions);
+    } catch (err) {
+      setPlannerError(err instanceof Error ? err.message : "Failed to load week planner");
+    } finally {
+      setPlannerLoading(false);
+    }
+  };
 
-  const employees = useMemo(() => entries.map((e) => e.employee), [entries]);
+  useEffect(() => {
+    if (mode !== "patterns") {
+      void load();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
+
+  useEffect(() => {
+    void loadPlanner();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showWeekPlanner, plannerWeekStart, plannerCompareWeekStart]);
+
+  const employees = useMemo(() => entries.map((entry) => entry.employee), [entries]);
+  const shiftsById = useMemo(
+    () => new Map(shifts.map((shift) => [shift.id, shift] as const)),
+    [shifts],
+  );
+  const currentWeekRowCache = useMemo(
+    () => plannerRowCacheByWeek[plannerWeekStart] ?? {},
+    [plannerRowCacheByWeek, plannerWeekStart],
+  );
+  const currentWeekDraftShiftMap = useMemo(
+    () => plannerDraftShiftMapByWeek[plannerWeekStart] ?? {},
+    [plannerDraftShiftMapByWeek, plannerWeekStart],
+  );
+  const plannerDirty = Object.keys(currentWeekDraftShiftMap).length > 0;
+
+  const plannerAllRows = useMemo(
+    () =>
+      Object.values(currentWeekRowCache)
+        .map((baseRow) => {
+          const draftShiftMap = currentWeekDraftShiftMap[baseRow.employee.employeeId];
+          const nextRow = draftShiftMap ? applyWeekPlannerShiftMap(baseRow, draftShiftMap) : baseRow;
+          return hydrateWeekPlannerRowShifts(nextRow, shiftsById);
+        })
+        .sort((left, right) => {
+          const lastCmp = left.employee.lastName.localeCompare(right.employee.lastName);
+          return lastCmp !== 0 ? lastCmp : left.employee.firstName.localeCompare(right.employee.firstName);
+        }),
+    [currentWeekDraftShiftMap, currentWeekRowCache, shiftsById],
+  );
+
+  const plannerDepartmentRows = useMemo(() => {
+    if (!plannerDepartmentId) return plannerAllRows;
+    return plannerAllRows.filter(
+      (row) => (row.employee.department?.departmentId ?? "") === plannerDepartmentId,
+    );
+  }, [plannerAllRows, plannerDepartmentId]);
+
+  const plannerSearchText = plannerEmployeeSearch.trim().toLowerCase();
+  const plannerVisibleRows = useMemo(
+    () =>
+      plannerDepartmentRows.filter((row) => {
+        if (
+          plannerSelectedEmployeeIds.length > 0 &&
+          !plannerSelectedEmployeeIds.includes(row.employee.employeeId)
+        ) {
+          return false;
+        }
+        if (!plannerSearchText) return true;
+        const haystack = [
+          row.employee.firstName,
+          row.employee.lastName,
+          row.employee.employeeCode,
+          row.employee.position?.name ?? "",
+          row.employee.department?.name ?? "",
+        ]
+          .join(" ")
+          .toLowerCase();
+        return haystack.includes(plannerSearchText);
+      }),
+    [plannerDepartmentRows, plannerSearchText, plannerSelectedEmployeeIds],
+  );
+  const plannerUnassignedEditableCount = useMemo(
+    () => countWeekPlannerUnassignedDays(plannerAllRows),
+    [plannerAllRows],
+  );
+
   const selectedDayKey = date;
   const overrideDayKey = (value: string) =>
     new Date(value).toLocaleDateString("en-CA", { timeZone: TZ });
 
   const overridesForDay = useMemo(
-    () =>
-      overrides.filter((o) => overrideDayKey(o.workDate) === selectedDayKey),
-    [overrides, selectedDayKey]
+    () => overrides.filter((o) => overrideDayKey(o.workDate) === selectedDayKey),
+    [overrides, selectedDayKey],
   );
   const upcomingOverrides = useMemo(
     () => overrides.filter((o) => overrideDayKey(o.workDate) > selectedDayKey),
-    [overrides, selectedDayKey]
+    [overrides, selectedDayKey],
   );
 
   const startShiftEdit = (shift: ShiftLite) => {
@@ -226,17 +299,15 @@ export function ScheduleBoard({ mode = "full" }: ScheduleBoardProps) {
     setShiftEdit({
       code: shift.code,
       name: shift.name,
+      colorHex: shift.colorHex ?? "",
+      isDayOff: Boolean(shift.isDayOff),
       startTime: minutesToTimeInput(shift.startMinutes),
       endTime: minutesToTimeInput(shift.endMinutes),
       spansMidnight: Boolean(shift.spansMidnight),
       breakStartTime:
-        shift.breakStartMinutes != null
-          ? minutesToTimeInput(shift.breakStartMinutes)
-          : "",
+        shift.breakStartMinutes != null ? minutesToTimeInput(shift.breakStartMinutes) : "",
       breakEndTime:
-        shift.breakEndMinutes != null
-          ? minutesToTimeInput(shift.breakEndMinutes)
-          : "",
+        shift.breakEndMinutes != null ? minutesToTimeInput(shift.breakEndMinutes) : "",
       notes: shift.notes ?? "",
     });
     setShiftEditError(null);
@@ -257,6 +328,8 @@ export function ScheduleBoard({ mode = "full" }: ScheduleBoardProps) {
         id: editingShiftId,
         code: shiftEdit.code,
         name: shiftEdit.name,
+        colorHex: shiftEdit.colorHex,
+        isDayOff: shiftEdit.isDayOff,
         startTime: shiftEdit.startTime,
         endTime: shiftEdit.endTime,
         spansMidnight: shiftEdit.spansMidnight,
@@ -269,155 +342,13 @@ export function ScheduleBoard({ mode = "full" }: ScheduleBoardProps) {
       }
       cancelShiftEdit();
       await load();
-      toast.success("Shift updated successfully.");
+      toast.success("Shift updated.");
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Failed to update shift";
+      const message = err instanceof Error ? err.message : "Failed to update shift";
       setShiftEditError(message);
-      toast.error("Failed to update shift.", {
-        description: message,
-      });
+      toast.error("Failed to update shift.", { description: message });
     } finally {
       setShiftEditSaving(false);
-    }
-  };
-
-  const startPatternEdit = (p: Pattern) => {
-    setEditingPatternId(p.id);
-    setPatternEdit({
-      code: p.code,
-      name: p.name,
-      dayShifts: {
-        sunShiftId: p.sunShiftId ? String(p.sunShiftId) : "",
-        monShiftId: p.monShiftId ? String(p.monShiftId) : "",
-        tueShiftId: p.tueShiftId ? String(p.tueShiftId) : "",
-        wedShiftId: p.wedShiftId ? String(p.wedShiftId) : "",
-        thuShiftId: p.thuShiftId ? String(p.thuShiftId) : "",
-        friShiftId: p.friShiftId ? String(p.friShiftId) : "",
-        satShiftId: p.satShiftId ? String(p.satShiftId) : "",
-      },
-    });
-    setPatternEditError(null);
-    setPatternEditOpen(true);
-  };
-
-  const cancelPatternEdit = () => {
-    setEditingPatternId(null);
-    setPatternEdit(null);
-    setPatternEditError(null);
-    setPatternEditOpen(false);
-  };
-
-  const savePatternEdit = async () => {
-    if (!editingPatternId || !patternEdit) {
-      setPatternEditError("No pattern selected");
-      return;
-    }
-    if (!patternEdit.code.trim() || !patternEdit.name.trim()) {
-      setPatternEditError("Code and name are required");
-      return;
-    }
-    try {
-      setPatternEditSaving(true);
-      setPatternEditError(null);
-      const payload: Record<string, string | number | null> = {
-        id: editingPatternId,
-        code: patternEdit.code.trim(),
-        name: patternEdit.name.trim(),
-      };
-      Object.entries(patternEdit.dayShifts).forEach(([key, val]) => {
-        payload[key] = val ? Number(val) : null;
-      });
-      const result = await updatePattern(
-        payload as Parameters<typeof updatePattern>[0],
-      );
-      if (!result.success) {
-        throw new Error(result.error || "Failed to update pattern");
-      }
-      cancelPatternEdit();
-      await load();
-      toast.success("Pattern updated successfully.");
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Failed to update pattern";
-      setPatternEditError(message);
-      toast.error("Failed to update pattern.", {
-        description: message,
-      });
-    } finally {
-      setPatternEditSaving(false);
-    }
-  };
-
-  const handleDeletePattern = async (id: string) => {
-    let succeeded = false;
-    try {
-      const result = await deletePatternAction(id);
-      if (!result.success) {
-        throw new Error(result.error || "Failed to disable pattern");
-      }
-      succeeded = true;
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Failed to disable pattern";
-      setPatternError(message);
-      setPatternEditError(message);
-      toast.error("Failed to disable pattern.", {
-        description: message,
-      });
-    } finally {
-      if (editingPatternId === id) cancelPatternEdit();
-      await load();
-      if (succeeded) {
-        toast.success("Pattern disabled successfully.");
-      }
-    }
-  };
-
-  const handleAssign = async () => {
-    if (!assignEmployeeId || !assignPatternId) {
-      setAssignError("Employee and pattern are required");
-      return;
-    }
-    if (!assignEffective) {
-      setAssignError("Effective date is required");
-      return;
-    }
-    try {
-      setAssignSaving(true);
-      setAssignError(null);
-      setAssignSuccess(null);
-      const result = await assignPatternToEmployee({
-        employeeId: assignEmployeeId,
-        patternId: assignPatternId,
-        effectiveDate: assignEffective,
-      });
-      if (!result.success) {
-        throw new Error(result.error || "Failed to assign pattern");
-      }
-      const emp = employees.find((e) => e.employeeId === assignEmployeeId);
-      const pat = patterns.find((p) => p.id === assignPatternId);
-      if (emp && pat) {
-        setAssignSuccess(
-          `Assigned ${emp.firstName} ${emp.lastName} to ${pat.name}`
-        );
-        toast.success("Pattern assigned successfully.", {
-          description: `${emp.firstName} ${emp.lastName} is now assigned to ${pat.name}.`,
-        });
-      } else {
-        setAssignSuccess("Pattern assigned successfully");
-        toast.success("Pattern assigned successfully.");
-      }
-      await load();
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Failed to assign pattern";
-      setAssignError(message);
-      toast.error("Failed to assign pattern.", {
-        description: message,
-      });
-    } finally {
-      setAssignSaving(false);
     }
   };
 
@@ -434,11 +365,7 @@ export function ScheduleBoard({ mode = "full" }: ScheduleBoardProps) {
       setOverrideError("End date is required for a range");
       return false;
     }
-    if (
-      overrideIsRange &&
-      overrideEndDate &&
-      new Date(overrideEndDate) < new Date(overrideDate)
-    ) {
+    if (overrideIsRange && overrideEndDate && new Date(overrideEndDate) < new Date(overrideDate)) {
       setOverrideError("End date must be on or after start date");
       return false;
     }
@@ -464,86 +391,32 @@ export function ScheduleBoard({ mode = "full" }: ScheduleBoardProps) {
           source: overrideSource,
         });
         if (!result.success) {
-          throw new Error(
-            result.error || `Failed to save override for ${day}`
-          );
+          throw new Error(result.error || `Failed to save override for ${day}`);
         }
       }
+
       await load();
-      // Reset form after applying
       setOverrideEmployeeId("");
       setOverrideShiftId("");
       setOverrideDate("");
       setOverrideEndDate(null);
       setOverrideIsRange(false);
-      toast.success("Schedule override saved successfully.", {
-        description:
-          dates.length > 1
-            ? `${dates.length} dates were updated.`
-            : "The selected date was updated.",
+      toast.success("Override saved.", {
+        description: dates.length > 1 ? `${dates.length} dates updated.` : "Selected date updated.",
       });
       return true;
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Failed to save override";
+      const message = err instanceof Error ? err.message : "Failed to save override";
       setOverrideError(message);
-      toast.error("Failed to save schedule override.", {
-        description: message,
-      });
+      toast.error("Failed to save override.", { description: message });
       return false;
     } finally {
       setOverrideSaving(false);
     }
   };
 
-  const handleCreatePattern = async () => {
-    if (!patternCode.trim() || !patternName.trim()) {
-      setPatternError("Code and name are required");
-      return;
-    }
-    try {
-      setPatternSaving(true);
-      setPatternError(null);
-      const payload: Record<string, string | number | null> = {
-        code: patternCode,
-        name: patternName,
-      };
-      Object.entries(dayShifts).forEach(([key, val]) => {
-        payload[key] = val ? Number(val) : null;
-      });
-      const result = await createPattern(
-        payload as Parameters<typeof createPattern>[0],
-      );
-      if (!result.success) {
-        throw new Error(result.error || "Failed to create pattern");
-      }
-      setPatternCode("");
-      setPatternName("");
-      setDayShifts({
-        sunShiftId: "",
-        monShiftId: "",
-        tueShiftId: "",
-        wedShiftId: "",
-        thuShiftId: "",
-        friShiftId: "",
-        satShiftId: "",
-      });
-      await load();
-      toast.success("Pattern created successfully.");
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Failed to create pattern";
-      setPatternError(message);
-      toast.error("Failed to create pattern.", {
-        description: message,
-      });
-    } finally {
-      setPatternSaving(false);
-    }
-  };
-
   const handleCreateShift = async () => {
-    if (!shiftCode.trim() || !shiftName.trim()) {
+    if (!shiftIsDayOff && (!shiftCode.trim() || !shiftName.trim())) {
       setShiftError("Code and name are required");
       return;
     }
@@ -553,6 +426,8 @@ export function ScheduleBoard({ mode = "full" }: ScheduleBoardProps) {
       const result = await createShift({
         code: shiftCode,
         name: shiftName,
+        colorHex: shiftColorHex,
+        isDayOff: shiftIsDayOff,
         startTime: shiftStart,
         endTime: shiftEnd,
         spansMidnight: shiftSpansMidnight,
@@ -565,18 +440,23 @@ export function ScheduleBoard({ mode = "full" }: ScheduleBoardProps) {
       }
       setShiftCode("");
       setShiftName("");
-      setShiftNotes("");
+      setShiftColorHex("");
+      setShiftIsDayOff(false);
+      setShiftStart("09:00");
+      setShiftEnd("18:00");
+      setShiftSpansMidnight(false);
       setShiftBreakStart("");
       setShiftBreakEnd("");
+      setShiftNotes("");
       await load();
-      toast.success("Shift created successfully.");
+      if (showWeekPlanner) {
+        await loadPlanner();
+      }
+      toast.success("Shift created.");
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Failed to create shift";
+      const message = err instanceof Error ? err.message : "Failed to create shift";
       setShiftError(message);
-      toast.error("Failed to create shift.", {
-        description: message,
-      });
+      toast.error("Failed to create shift.", { description: message });
     } finally {
       setShiftSaving(false);
     }
@@ -593,9 +473,7 @@ export function ScheduleBoard({ mode = "full" }: ScheduleBoardProps) {
       setOverrideDate(value.from.toLocaleDateString("en-CA", { timeZone: TZ }));
     }
     if (value.to) {
-      setOverrideEndDate(
-        value.to.toLocaleDateString("en-CA", { timeZone: TZ })
-      );
+      setOverrideEndDate(value.to.toLocaleDateString("en-CA", { timeZone: TZ }));
       setOverrideIsRange(true);
     } else {
       setOverrideEndDate(null);
@@ -624,29 +502,14 @@ export function ScheduleBoard({ mode = "full" }: ScheduleBoardProps) {
     if (!result.success) {
       const message = result.error || "Failed to delete override";
       setOverrideError(message);
-      toast.error("Failed to delete schedule override.", {
-        description: message,
-      });
+      toast.error("Failed to delete override.", { description: message });
       return;
     }
     await load();
-    toast.success("Schedule override deleted successfully.");
+    toast.success("Override deleted.");
   };
 
-  const handleOverrideEditOpenChange = (open: boolean) => {
-    setOverrideEditOpen(open);
-    if (!open) setEditingOverride(null);
-  };
-
-  const handlePatternEditOpenChange = (open: boolean) => {
-    if (open) setPatternEditOpen(true);
-    else cancelPatternEdit();
-  };
-
-  const handleShiftFormChange = (
-    field: string,
-    value: string | number | boolean
-  ) => {
+  const handleShiftFormChange = (field: string, value: string | number | boolean) => {
     switch (field) {
       case "code":
         setShiftCode(String(value));
@@ -654,6 +517,23 @@ export function ScheduleBoard({ mode = "full" }: ScheduleBoardProps) {
       case "name":
         setShiftName(String(value));
         break;
+      case "colorHex":
+        setShiftColorHex(String(value));
+        break;
+      case "isDayOff": {
+        const checked = Boolean(value);
+        setShiftIsDayOff(checked);
+        if (checked) {
+          setShiftStart("00:00");
+          setShiftEnd("00:00");
+          setShiftBreakStart("");
+          setShiftBreakEnd("");
+          setShiftSpansMidnight(false);
+          if (!shiftCode.trim()) setShiftCode("OFF");
+          if (!shiftName.trim()) setShiftName("Day Off");
+        }
+        break;
+      }
       case "start":
         setShiftStart(String(value));
         break;
@@ -677,6 +557,548 @@ export function ScheduleBoard({ mode = "full" }: ScheduleBoardProps) {
     }
   };
 
+  const setPlannerDraftsForCurrentWeek = (
+    updater: (drafts: Record<string, WeekShiftMap>) => Record<string, WeekShiftMap>,
+  ) => {
+    setPlannerDraftShiftMapByWeek((prev) => ({
+      ...prev,
+      [plannerWeekStart]: updater(prev[plannerWeekStart] ?? {}),
+    }));
+  };
+
+  const applyPlannerShiftMaps = (
+    employeeShiftMaps: Array<{ employeeId: string; shiftMap: WeekShiftMap }>,
+  ) => {
+    setPlannerDraftsForCurrentWeek((drafts) => {
+      const nextDrafts = { ...drafts };
+
+      for (const { employeeId, shiftMap } of employeeShiftMaps) {
+        const baseRow = currentWeekRowCache[employeeId];
+        if (!baseRow) continue;
+        const baseShiftMap = weekPlannerRowToShiftMap(baseRow);
+        if (areWeekShiftMapsEqual(baseShiftMap, shiftMap)) {
+          delete nextDrafts[employeeId];
+          continue;
+        }
+        nextDrafts[employeeId] = shiftMap;
+      }
+
+      return nextDrafts;
+    });
+  };
+
+  const reloadPlannerFromServer = async () => {
+    setPlannerDraftShiftMapByWeek((prev) => {
+      const next = { ...prev };
+      delete next[plannerWeekStart];
+      return next;
+    });
+    await loadPlanner();
+  };
+
+  const handlePlannerShiftChange = (
+    employeeId: string,
+    dayKey: WeekPlannerDayKey,
+    shiftId: number | null,
+  ) => {
+    const row = plannerAllRows.find((entry) => entry.employee.employeeId === employeeId);
+    if (!row) return;
+    if (!isWeekPlannerDayEditable(row.days[dayKey])) return;
+    const nextShiftMap = {
+      ...weekPlannerRowToShiftMap(row),
+      [dayKey]: shiftId,
+    };
+    applyPlannerShiftMaps([{ employeeId, shiftMap: nextShiftMap }]);
+  };
+
+  const handlePlannerCopyPreviousWeek = (employeeIds?: string[]) => {
+    const scopedRows = employeeIds?.length
+      ? plannerVisibleRows.filter((row) => employeeIds.includes(row.employee.employeeId))
+      : plannerVisibleRows;
+    applyPlannerShiftMaps(
+      scopedRows.map((row) => ({
+        employeeId: row.employee.employeeId,
+        shiftMap: weekPlannerDayKeys.reduce(
+          (acc, dayKey) => {
+            acc[dayKey] = isWeekPlannerDayEditable(row.days[dayKey])
+              ? row.days[dayKey].compareShiftId ?? null
+              : row.days[dayKey].shiftId ?? null;
+            return acc;
+          },
+          {} as WeekShiftMap,
+        ),
+      })),
+    );
+  };
+
+  const handlePlannerSwapPreviousWeek = (
+    pairs: WeekPlannerAlternatePair[],
+    employeeIds?: string[],
+  ) => {
+    const invalidPair = pairs.find(
+      (pair) =>
+        !shiftsById.has(pair.leftShiftId) ||
+        !shiftsById.has(pair.rightShiftId),
+    );
+    if (invalidPair) {
+      setPlannerError("Alternate picker contains archived or missing shifts");
+      return;
+    }
+    const scopedRows = employeeIds?.length
+      ? plannerVisibleRows.filter((row) => employeeIds.includes(row.employee.employeeId))
+      : plannerVisibleRows;
+    applyPlannerShiftMaps(
+      scopedRows.map((row) => ({
+        employeeId: row.employee.employeeId,
+        shiftMap: weekPlannerDayKeys.reduce(
+          (acc, dayKey) => {
+            if (!isWeekPlannerDayEditable(row.days[dayKey])) {
+              acc[dayKey] = row.days[dayKey].shiftId ?? null;
+              return acc;
+            }
+            const currentShiftId = row.days[dayKey].shiftId ?? null;
+            const matchedPair = pairs.find(
+              (pair) =>
+                pair.leftShiftId === currentShiftId ||
+                pair.rightShiftId === currentShiftId,
+            );
+            acc[dayKey] = matchedPair
+              ? matchedPair.leftShiftId === currentShiftId
+                ? matchedPair.rightShiftId
+                : matchedPair.leftShiftId
+              : currentShiftId;
+            return acc;
+          },
+          {} as WeekShiftMap,
+        ),
+      })),
+    );
+  };
+
+  const handlePlannerClearWeek = (employeeIds?: string[]) => {
+    const scopedRows = employeeIds?.length
+      ? plannerVisibleRows.filter((row) => employeeIds.includes(row.employee.employeeId))
+      : plannerVisibleRows;
+    applyPlannerShiftMaps(
+      scopedRows.map((row) => ({
+        employeeId: row.employee.employeeId,
+        shiftMap: weekPlannerDayKeys.reduce(
+          (acc, dayKey) => {
+            acc[dayKey] = isWeekPlannerDayEditable(row.days[dayKey])
+              ? null
+              : row.days[dayKey].shiftId ?? null;
+            return acc;
+          },
+          {} as WeekShiftMap,
+        ),
+      })),
+    );
+  };
+
+  const handlePlannerDayOffTool = (input: WeekPlannerDayOffToolInput) => {
+    const dayOffShift = shifts.find((shift) => shift.isDayOff) ?? null;
+    if (!dayOffShift) {
+      setPlannerError("Create a Day Off shift first");
+      return;
+    }
+
+    const targetedDayKeys = input.dayKeys.filter(
+      (dayKey) => (input.employeeIdsByDay[dayKey] ?? []).length > 0,
+    );
+    const targetedEmployeeIds = Array.from(
+      new Set(
+        Object.values(input.employeeIdsByDay)
+          .flatMap((employeeIds) => employeeIds ?? [])
+          .filter(Boolean),
+      ),
+    );
+
+    if (targetedEmployeeIds.length === 0) {
+      setPlannerError("Pick at least one employee for a selected day");
+      return;
+    }
+    if (input.mode !== "clearAllOff" && targetedDayKeys.length === 0) {
+      setPlannerError("Pick at least one employee for a selected day");
+      return;
+    }
+
+    applyPlannerShiftMaps(
+      plannerAllRows
+        .filter((row) => targetedEmployeeIds.includes(row.employee.employeeId))
+        .map((row) => ({
+        employeeId: row.employee.employeeId,
+        shiftMap: weekPlannerDayKeys.reduce(
+          (acc, dayKey) => {
+            const currentShiftId = row.days[dayKey].shiftId ?? null;
+            const currentShift = currentShiftId != null ? shiftsById.get(currentShiftId) ?? null : null;
+            const employeeIdsForDay = input.employeeIdsByDay[dayKey] ?? [];
+            const employeeSelectedForDay = employeeIdsForDay.includes(row.employee.employeeId);
+            const employeeSelectedForAnyDay = targetedEmployeeIds.includes(row.employee.employeeId);
+            if (
+              !isWeekPlannerDayEditable(row.days[dayKey])
+            ) {
+              acc[dayKey] = currentShiftId;
+              return acc;
+            }
+
+            if (input.mode === "clearAllOff") {
+              acc[dayKey] =
+                employeeSelectedForAnyDay && currentShift?.isDayOff ? null : currentShiftId;
+              return acc;
+            }
+
+            if (!targetedDayKeys.includes(dayKey)) {
+              if (
+                input.mode === "assignOff" &&
+                input.replaceExistingOff &&
+                employeeSelectedForAnyDay &&
+                currentShift?.isDayOff
+              ) {
+                acc[dayKey] = null;
+                return acc;
+              }
+              acc[dayKey] = currentShiftId;
+              return acc;
+            }
+
+            if (!employeeSelectedForDay) {
+              if (
+                input.mode === "assignOff" &&
+                input.replaceExistingOff &&
+                employeeSelectedForAnyDay &&
+                currentShift?.isDayOff
+              ) {
+                acc[dayKey] = null;
+                return acc;
+              }
+              acc[dayKey] = currentShiftId;
+              return acc;
+            }
+
+            acc[dayKey] =
+              input.mode === "assignOff"
+                ? dayOffShift.id
+                : currentShift?.isDayOff
+                  ? null
+                  : currentShiftId;
+            return acc;
+          },
+          {} as WeekShiftMap,
+        ),
+      })),
+    );
+  };
+
+  const handlePlannerBulkAction = (input: WeekPlannerBulkActionInput) => {
+    const matchesPositionFilter = (row: WeekPlannerRow, positionNames: string[] | null | undefined) => {
+      if (!positionNames?.length) return true;
+      const rowPositionName = (row.employee.position?.name ?? "").trim();
+      return positionNames.includes(rowPositionName);
+    };
+
+    const scopeRows = plannerDepartmentRows.filter((row) => {
+      if (input.employeeIds?.length && !input.employeeIds.includes(row.employee.employeeId)) {
+        return false;
+      }
+      if (input.mode === "positionAllocate") return true;
+      return matchesPositionFilter(row, input.positionNames);
+    });
+
+    if (scopeRows.length === 0) {
+      setPlannerError("No employees matched bulk filter");
+      return;
+    }
+
+    const rowOrder = new Map(
+      scopeRows.map((row, index) => [row.employee.employeeId, index] as const),
+    );
+    const nextMapsByEmployeeId = new Map<string, WeekShiftMap>(
+      scopeRows.map((row) => [row.employee.employeeId, { ...weekPlannerRowToShiftMap(row) }]),
+    );
+
+    const getShiftIdForRowDay = (row: WeekPlannerRow, dayKey: WeekPlannerDayKey) =>
+      nextMapsByEmployeeId.get(row.employee.employeeId)?.[dayKey] ?? null;
+
+    const countAssignedWorkDays = (row: WeekPlannerRow) =>
+      weekPlannerDayKeys.reduce((count, dayKey) => {
+        const shiftId = getShiftIdForRowDay(row, dayKey);
+        const shift = shiftId != null ? shiftsById.get(shiftId) ?? null : null;
+        return count + (shift && !shift.isDayOff ? 1 : 0);
+      }, 0);
+
+    const matchesBulkTarget = (
+      shiftId: number | null,
+      targetMode: "bucket" | "shift",
+      targetShiftId: number | null,
+      targetBucket: "morning" | "afternoon" | "other" | null,
+    ) => {
+      if (shiftId == null) return false;
+      const shift = shiftsById.get(shiftId) ?? null;
+      if (!shift || shift.isDayOff) return false;
+      if (targetMode === "shift") {
+        return shiftId === targetShiftId;
+      }
+      return targetBucket != null ? getPlannerBucket(shift) === targetBucket : false;
+    };
+
+    const countTargetMatches = (
+      row: WeekPlannerRow,
+      targetMode: "bucket" | "shift",
+      targetShiftId: number | null,
+      targetBucket: "morning" | "afternoon" | "other" | null,
+    ) =>
+      weekPlannerDayKeys.reduce(
+        (count, dayKey) =>
+          count +
+          (matchesBulkTarget(
+            getShiftIdForRowDay(row, dayKey),
+            targetMode,
+            targetShiftId,
+            targetBucket,
+          )
+            ? 1
+            : 0),
+        0,
+      );
+
+    const applyHeadcountTarget = (
+      rowsToUse: WeekPlannerRow[],
+      dayKey: WeekPlannerDayKey,
+      targetMode: "bucket" | "shift",
+      targetShiftId: number | null,
+      targetBucket: "morning" | "afternoon" | "other" | null,
+      assignShiftId: number,
+      targetCount: number,
+    ) => {
+      const matchedRows = rowsToUse.filter((row) =>
+        isWeekPlannerDayEditable(row.days[dayKey]) &&
+        matchesBulkTarget(
+          getShiftIdForRowDay(row, dayKey),
+          targetMode,
+          targetShiftId,
+          targetBucket,
+        ),
+      );
+
+      if (matchedRows.length > targetCount) {
+        const removalCandidates = [...matchedRows].sort((left, right) => {
+          const categoryDiff =
+            countTargetMatches(right, targetMode, targetShiftId, targetBucket) -
+            countTargetMatches(left, targetMode, targetShiftId, targetBucket);
+          if (categoryDiff !== 0) return categoryDiff;
+          const assignmentDiff = countAssignedWorkDays(right) - countAssignedWorkDays(left);
+          if (assignmentDiff !== 0) return assignmentDiff;
+          return (rowOrder.get(right.employee.employeeId) ?? 0) - (rowOrder.get(left.employee.employeeId) ?? 0);
+        });
+
+        for (const row of removalCandidates.slice(targetCount)) {
+          const nextMap = nextMapsByEmployeeId.get(row.employee.employeeId);
+          if (!nextMap) continue;
+          nextMap[dayKey] = null;
+        }
+      }
+
+      const currentMatchedCount = rowsToUse.filter((row) =>
+        isWeekPlannerDayEditable(row.days[dayKey]) &&
+        matchesBulkTarget(
+          getShiftIdForRowDay(row, dayKey),
+          targetMode,
+          targetShiftId,
+          targetBucket,
+        ),
+      ).length;
+
+      if (currentMatchedCount < targetCount) {
+        const additionCandidates = rowsToUse
+          .filter((row) => {
+            if (!isWeekPlannerDayEditable(row.days[dayKey])) return false;
+            const currentShiftId = getShiftIdForRowDay(row, dayKey);
+            return !matchesBulkTarget(currentShiftId, targetMode, targetShiftId, targetBucket);
+          })
+          .sort((left, right) => {
+            const categoryDiff =
+              countTargetMatches(left, targetMode, targetShiftId, targetBucket) -
+              countTargetMatches(right, targetMode, targetShiftId, targetBucket);
+            if (categoryDiff !== 0) return categoryDiff;
+            const assignmentDiff = countAssignedWorkDays(left) - countAssignedWorkDays(right);
+            if (assignmentDiff !== 0) return assignmentDiff;
+            return (rowOrder.get(left.employee.employeeId) ?? 0) - (rowOrder.get(right.employee.employeeId) ?? 0);
+          });
+
+        for (const row of additionCandidates.slice(0, targetCount - currentMatchedCount)) {
+          const nextMap = nextMapsByEmployeeId.get(row.employee.employeeId);
+          if (!nextMap) continue;
+          nextMap[dayKey] = assignShiftId;
+        }
+      }
+    };
+
+    if (input.mode === "replace") {
+      for (const dayKey of input.dayKeys) {
+        for (const row of scopeRows) {
+          if (!isWeekPlannerDayEditable(row.days[dayKey])) continue;
+          const currentShiftId = getShiftIdForRowDay(row, dayKey);
+          const currentShift = currentShiftId != null ? shiftsById.get(currentShiftId) ?? null : null;
+          const matchesSource =
+            input.sourceMode === "any"
+              ? true
+              : input.sourceMode === "unassigned"
+                ? currentShiftId == null
+                : input.sourceMode === "dayOff"
+                  ? Boolean(currentShift?.isDayOff)
+                  : currentShiftId === input.sourceShiftId;
+
+          if (!matchesSource) continue;
+          const nextMap = nextMapsByEmployeeId.get(row.employee.employeeId);
+          if (!nextMap) continue;
+          nextMap[dayKey] = input.targetShiftId;
+        }
+      }
+    } else if (input.mode === "headcount") {
+      const assignShiftId = input.targetMode === "shift" ? input.targetShiftId : input.assignShiftId;
+      const assignShift = assignShiftId != null ? shiftsById.get(assignShiftId) ?? null : null;
+      if (assignShiftId == null || !assignShift || assignShift.isDayOff) {
+        setPlannerError("Headcount mode needs working shift");
+        return;
+      }
+
+      for (const dayKey of input.dayKeys) {
+        applyHeadcountTarget(
+          scopeRows,
+          dayKey,
+          input.targetMode,
+          input.targetShiftId,
+          input.targetBucket,
+          assignShiftId,
+          input.targetCount,
+        );
+      }
+    } else {
+      const validAllocations = input.allocations.filter(
+        (allocation) => allocation.shiftId != null && allocation.targetCount > 0,
+      );
+      if (validAllocations.length === 0) {
+        setPlannerError("Position allocate mode needs at least one position with count and shift");
+        return;
+      }
+
+      for (const allocation of validAllocations) {
+        const assignShift = shiftsById.get(allocation.shiftId!) ?? null;
+        if (!assignShift || assignShift.isDayOff) {
+          setPlannerError(`Position allocate mode needs working shift for ${allocation.positionName}`);
+          return;
+        }
+      }
+
+      for (const dayKey of input.dayKeys) {
+        const allocationsByPosition = new Map<
+          string,
+          Array<{ shiftId: number; targetCount: number }>
+        >();
+        for (const allocation of validAllocations) {
+          allocationsByPosition.set(allocation.positionName, [
+            ...(allocationsByPosition.get(allocation.positionName) ?? []),
+            { shiftId: allocation.shiftId!, targetCount: allocation.targetCount },
+          ]);
+        }
+
+        for (const [positionName, positionAllocations] of allocationsByPosition.entries()) {
+          const positionRows = scopeRows.filter(
+            (row) => (row.employee.position?.name ?? "").trim() === positionName,
+          );
+          if (positionRows.length === 0) continue;
+
+          let remainingCapacity = positionRows.length;
+          for (const allocation of positionAllocations) {
+            const cappedTargetCount = Math.max(
+              0,
+              Math.min(allocation.targetCount, remainingCapacity),
+            );
+            if (cappedTargetCount <= 0) continue;
+
+            applyHeadcountTarget(
+              positionRows,
+              dayKey,
+              "shift",
+              allocation.shiftId,
+              null,
+              allocation.shiftId,
+              cappedTargetCount,
+            );
+            remainingCapacity -= cappedTargetCount;
+            if (remainingCapacity <= 0) break;
+          }
+        }
+      }
+    }
+
+    applyPlannerShiftMaps(
+      Array.from(nextMapsByEmployeeId.entries()).map(([employeeId, shiftMap]) => ({
+        employeeId,
+        shiftMap,
+      })),
+    );
+  };
+
+  const handlePlannerSave = async () => {
+    const dirtyEmployeeIds = Object.keys(currentWeekDraftShiftMap);
+    if (dirtyEmployeeIds.length === 0) {
+      setPlannerError("No planner changes to save");
+      return;
+    }
+
+    try {
+      setPlannerSaving(true);
+      setPlannerError(null);
+      const result = await saveWeekPlannerAssignments({
+        weekStart: plannerWeekStart,
+        rows: dirtyEmployeeIds
+          .map((employeeId) => {
+            const draftShiftMap = currentWeekDraftShiftMap[employeeId];
+            if (!draftShiftMap) return null;
+            return {
+              employeeId,
+              days: {
+                mon: draftShiftMap.mon,
+                tue: draftShiftMap.tue,
+                wed: draftShiftMap.wed,
+                thu: draftShiftMap.thu,
+                fri: draftShiftMap.fri,
+                sat: draftShiftMap.sat,
+                sun: draftShiftMap.sun,
+              },
+            };
+          })
+          .filter(
+            (
+              row,
+            ): row is {
+              employeeId: string;
+              days: Record<WeekPlannerDayKey, number | null>;
+            } => row != null,
+          ),
+      });
+      if (!result.success) {
+        throw new Error(result.error || "Failed to save week planner");
+      }
+      toast.success("Week saved.", {
+        description: `${dirtyEmployeeIds.length} employee schedules updated.`,
+      });
+      setPlannerDraftShiftMapByWeek((prev) => {
+        const next = { ...prev };
+        delete next[plannerWeekStart];
+        return next;
+      });
+      await loadPlanner();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to save week planner";
+      setPlannerError(message);
+      toast.error("Failed to save week.", { description: message });
+    } finally {
+      setPlannerSaving(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {showSchedule && (
@@ -690,61 +1112,38 @@ export function ScheduleBoard({ mode = "full" }: ScheduleBoardProps) {
         />
       )}
 
-      {showPatternsUI && (
-        <PatternsSection
-          showAssignPattern={showAssignPattern}
-          showCreatePattern={showCreatePattern}
-          showWeeklyPatterns={showWeeklyPatterns}
-          employees={employees}
-          patterns={patterns}
+      {showWeekPlanner && (
+        <WeekPlannerSection
+          weekStart={plannerWeekStart}
+          compareWeekStart={plannerCompareWeekStart}
+          departmentId={plannerDepartmentId}
+          employeeSearch={plannerEmployeeSearch}
+          selectedEmployeeIds={plannerSelectedEmployeeIds}
+          departments={plannerDepartments}
+          scheduleWeekOptions={plannerScheduleWeekOptions}
+          referenceWeekOptions={plannerReferenceWeekOptions}
           shifts={shifts}
-          assignments={patternAssignments}
-          assignEmployeeId={assignEmployeeId}
-          assignPatternId={assignPatternId}
-          assignEffective={assignEffective}
-          assignError={assignError}
-          assignSaving={assignSaving}
-          assignSuccess={assignSuccess}
-          onRefresh={load}
-          onAssignEmployeeChange={setAssignEmployeeId}
-          onAssignPatternChange={setAssignPatternId}
-          onAssignEffectiveChange={setAssignEffective}
-          onAssignSubmit={handleAssign}
-          editingPatternId={editingPatternId}
-          patternCode={patternCode}
-          patternName={patternName}
-          dayShifts={dayShifts}
-          patternSaving={patternSaving}
-          patternError={patternError}
-          onPatternCodeChange={setPatternCode}
-          onPatternNameChange={setPatternName}
-          onDayShiftChange={(key, value) =>
-            setDayShifts((prev) => ({ ...prev, [key]: value }))
-          }
-          onCreatePattern={handleCreatePattern}
-          onDeletePattern={handleDeletePattern}
-          onStartEditPattern={startPatternEdit}
-          patternEditOpen={patternEditOpen}
-          onPatternEditOpenChange={handlePatternEditOpenChange}
-          patternEdit={patternEdit}
-          patternEditError={patternEditError}
-          patternEditSaving={patternEditSaving}
-          onPatternEditChange={(value) => setPatternEdit(value)}
-          onSavePatternEdit={savePatternEdit}
-          onCancelPatternEdit={cancelPatternEdit}
-          onDeleteAssignment={async (id) => {
-            const result = await deletePatternAssignment(id);
-            if (!result.success) {
-              const message = result.error || "Failed to delete assignment";
-              setAssignError(message);
-              toast.error("Failed to delete pattern assignment.", {
-                description: message,
-              });
-              return;
-            }
-            await load();
-            toast.success("Pattern assignment deleted successfully.");
-          }}
+          rows={plannerVisibleRows}
+          summaryRows={plannerDepartmentRows}
+          loading={plannerLoading}
+          saving={plannerSaving}
+          error={plannerError}
+          dirty={plannerDirty}
+          canSave={plannerDirty && plannerUnassignedEditableCount === 0}
+          unassignedCount={plannerUnassignedEditableCount}
+          onWeekStartChange={setPlannerWeekStart}
+          onCompareWeekStartChange={setPlannerCompareWeekStart}
+          onDepartmentChange={setPlannerDepartmentId}
+          onEmployeeSearchChange={setPlannerEmployeeSearch}
+          onSelectedEmployeeIdsChange={setPlannerSelectedEmployeeIds}
+          onRefresh={reloadPlannerFromServer}
+          onSave={handlePlannerSave}
+          onCopyPreviousWeek={handlePlannerCopyPreviousWeek}
+          onSwapPreviousWeek={handlePlannerSwapPreviousWeek}
+          onClearWeek={handlePlannerClearWeek}
+          onApplyDayOffTool={handlePlannerDayOffTool}
+          onChangeShift={handlePlannerShiftChange}
+          onApplyBulkAction={handlePlannerBulkAction}
         />
       )}
 
@@ -768,7 +1167,10 @@ export function ScheduleBoard({ mode = "full" }: ScheduleBoardProps) {
         overridePickerOpen={overridePickerOpen}
         onOverridePickerOpenChange={setOverridePickerOpen}
         overrideEditOpen={overrideEditOpen}
-        onOverrideEditOpenChange={handleOverrideEditOpenChange}
+        onOverrideEditOpenChange={(open) => {
+          setOverrideEditOpen(open);
+          if (!open) setEditingOverride(null);
+        }}
         editingOverride={editingOverride}
         onOverrideEmployeeChange={setOverrideEmployeeId}
         onOverrideShiftChange={setOverrideShiftId}
@@ -790,6 +1192,8 @@ export function ScheduleBoard({ mode = "full" }: ScheduleBoardProps) {
         shiftEditError={shiftEditError}
         shiftCode={shiftCode}
         shiftName={shiftName}
+        shiftColorHex={shiftColorHex}
+        shiftIsDayOff={shiftIsDayOff}
         shiftStart={shiftStart}
         shiftEnd={shiftEnd}
         shiftSpansMidnight={shiftSpansMidnight}
@@ -806,19 +1210,32 @@ export function ScheduleBoard({ mode = "full" }: ScheduleBoardProps) {
         onDeleteShift={async (id) => {
           const result = await deleteShift(id);
           if (!result.success) {
-            const message = result.error || "Failed to delete shift";
-            setShiftEditError(message);
-            toast.error("Failed to delete shift.", {
-              description: message,
-            });
+            const message = result.error || "Failed to archive shift";
+            setShiftError(message);
+            toast.error("Failed to archive shift.", { description: message });
             return;
           }
           await load();
-          toast.success("Shift deleted successfully.");
+          if (showWeekPlanner) {
+            await loadPlanner();
+          }
+          toast.success("Shift archived.");
         }}
         onCreateShift={handleCreateShift}
         onChangeField={handleShiftFormChange}
+        hasDayOffShift={hasDayOffShift}
       />
     </div>
   );
 }
+
+const getPlannerBucket = (shift: ShiftLite) => {
+  if (shift.isDayOff) return "other";
+  const start = shift.startMinutes;
+  const haystack = `${shift.code} ${shift.name}`.toUpperCase();
+  if (haystack.includes("AM") || haystack.includes("MORNING")) return "morning";
+  if (haystack.includes("PM") || haystack.includes("AFTERNOON")) return "afternoon";
+  if (!shift.spansMidnight && start >= 240 && start < 720) return "morning";
+  if (!shift.spansMidnight && start >= 720 && start < 1080) return "afternoon";
+  return "other";
+};

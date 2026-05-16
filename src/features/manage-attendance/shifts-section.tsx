@@ -1,6 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ColorPicker } from "@/components/ui/color-picker";
 import { Input } from "@/components/ui/input";
 import {
   Table,
@@ -56,6 +57,8 @@ const deriveShiftCalcs = (
 export type ShiftEditState = {
   code: string;
   name: string;
+  colorHex: string;
+  isDayOff: boolean;
   startTime: string;
   endTime: string;
   spansMidnight: boolean;
@@ -73,6 +76,8 @@ type ShiftsSectionProps = {
   shiftEditError: string | null;
   shiftCode: string;
   shiftName: string;
+  shiftColorHex: string;
+  shiftIsDayOff: boolean;
   shiftStart: string;
   shiftEnd: string;
   shiftSpansMidnight: boolean;
@@ -81,6 +86,7 @@ type ShiftsSectionProps = {
   shiftNotes: string;
   shiftSaving: boolean;
   shiftError: string | null;
+  hasDayOffShift: boolean;
   onRefresh: () => void;
   onStartEdit: (shift: ShiftLite) => void;
   onChangeEdit: (value: ShiftEditState) => void;
@@ -100,6 +106,8 @@ export function ShiftsSection({
   shiftEditError,
   shiftCode,
   shiftName,
+  shiftColorHex,
+  shiftIsDayOff,
   shiftStart,
   shiftEnd,
   shiftSpansMidnight,
@@ -108,6 +116,7 @@ export function ShiftsSection({
   shiftNotes,
   shiftSaving,
   shiftError,
+  hasDayOffShift,
   onRefresh,
   onStartEdit,
   onChangeEdit,
@@ -119,13 +128,15 @@ export function ShiftsSection({
 }: ShiftsSectionProps) {
   if (!showShifts) return null;
 
-  const derivedCreate = deriveShiftCalcs(
-    shiftStart,
-    shiftEnd,
-    shiftSpansMidnight,
-    shiftBreakStart,
-    shiftBreakEnd
-  );
+  const derivedCreate = shiftIsDayOff
+    ? { breakMinutes: 0, paidHours: 0, totalMinutes: 0 }
+    : deriveShiftCalcs(
+        shiftStart,
+        shiftEnd,
+        shiftSpansMidnight,
+        shiftBreakStart,
+        shiftBreakEnd
+      );
 
   return (
     <>
@@ -161,6 +172,8 @@ export function ShiftsSection({
                     <TableHead>Break (min)</TableHead>
                     <TableHead>Paid hrs</TableHead>
                     <TableHead>Spans midnight</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead className="text-right">Color</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -217,6 +230,7 @@ export function ShiftsSection({
                               <Input
                                 type="time"
                                 value={shiftEdit?.startTime ?? ""}
+                                disabled={shiftEdit?.isDayOff}
                                 onChange={(e) =>
                                   shiftEdit &&
                                   onChangeEdit({
@@ -228,6 +242,7 @@ export function ShiftsSection({
                               <Input
                                 type="time"
                                 value={shiftEdit?.endTime ?? ""}
+                                disabled={shiftEdit?.isDayOff}
                                 onChange={(e) =>
                                   shiftEdit &&
                                   onChangeEdit({
@@ -249,6 +264,7 @@ export function ShiftsSection({
                               <Input
                                 type="time"
                                 value={shiftEdit?.breakStartTime ?? ""}
+                                disabled={shiftEdit?.isDayOff}
                                 onChange={(e) =>
                                   shiftEdit &&
                                   onChangeEdit({
@@ -260,6 +276,7 @@ export function ShiftsSection({
                               <Input
                                 type="time"
                                 value={shiftEdit?.breakEndTime ?? ""}
+                                disabled={shiftEdit?.isDayOff}
                                 onChange={(e) =>
                                   shiftEdit &&
                                   onChangeEdit({
@@ -280,12 +297,16 @@ export function ShiftsSection({
                         </TableCell>
                         <TableCell className="text-sm">
                           {isEditing
-                            ? derivedRow?.breakMinutes ?? 0
+                            ? shiftEdit?.isDayOff
+                              ? 0
+                              : derivedRow?.breakMinutes ?? 0
                             : shift.breakMinutesUnpaid ?? 0}
                         </TableCell>
                         <TableCell className="text-sm">
                           {isEditing
-                            ? derivedRow?.paidHours ?? 0
+                            ? shiftEdit?.isDayOff
+                              ? 0
+                              : derivedRow?.paidHours ?? 0
                             : shift.paidHoursPerDay ?? 0}
                         </TableCell>
                         <TableCell>
@@ -294,6 +315,7 @@ export function ShiftsSection({
                               <input
                                 type="checkbox"
                                 checked={shiftEdit?.spansMidnight ?? false}
+                                disabled={shiftEdit?.isDayOff}
                                 onChange={(e) =>
                                   shiftEdit &&
                                   onChangeEdit({
@@ -311,6 +333,56 @@ export function ShiftsSection({
                             <Badge variant="outline" className="uppercase">
                               {shift.spansMidnight ? "Yes" : "No"}
                             </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {isEditing ? (
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={shiftEdit?.isDayOff ?? false}
+                                onChange={(e) =>
+                                  shiftEdit &&
+                                  onChangeEdit({
+                                    ...shiftEdit,
+                                    isDayOff: e.target.checked,
+                                    startTime: e.target.checked ? "00:00" : shiftEdit.startTime,
+                                    endTime: e.target.checked ? "00:00" : shiftEdit.endTime,
+                                    breakStartTime: e.target.checked ? "" : shiftEdit.breakStartTime,
+                                    breakEndTime: e.target.checked ? "" : shiftEdit.breakEndTime,
+                                    spansMidnight: e.target.checked ? false : shiftEdit.spansMidnight,
+                                  })
+                                }
+                                className="h-4 w-4"
+                              />
+                              <span className="text-xs text-muted-foreground">
+                                Day Off shift
+                              </span>
+                            </div>
+                          ) : shift.isDayOff ? (
+                            <Badge>Day Off</Badge>
+                          ) : (
+                            <Badge variant="outline">Work</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {isEditing ? (
+                            <div className="ml-auto max-w-44">
+                              <ColorPicker
+                                value={shiftEdit?.colorHex ?? ""}
+                                onChange={(value) =>
+                                  shiftEdit &&
+                                  onChangeEdit({
+                                    ...shiftEdit,
+                                    colorHex: value,
+                                  })
+                                }
+                              />
+                            </div>
+                          ) : shift.colorHex ? (
+                            <div className="ml-auto h-6 w-10 rounded border" style={{ backgroundColor: shift.colorHex }} />
+                          ) : (
+                            <span className="text-sm text-muted-foreground">—</span>
                           )}
                         </TableCell>
                         <TableCell className="text-sm text-right">
@@ -352,7 +424,7 @@ export function ShiftsSection({
                                 onClick={() => onDeleteShift(shift.id)}
                               >
                                 <Trash2 className="h-4 w-4" />
-                                Delete
+                                Archive
                               </Button>
                             </div>
                           )}
@@ -374,7 +446,7 @@ export function ShiftsSection({
         <CardHeader>
           <CardTitle className="text-lg">Create Shift</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Define a shift with start/end times and break details.
+            Define shift, optional color, or create singleton Day Off shift.
           </p>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -396,10 +468,39 @@ export function ShiftsSection({
               />
             </div>
             <div className="space-y-2">
+              <label className="text-sm font-medium">Color</label>
+              <ColorPicker
+                value={shiftColorHex}
+                onChange={(value) => onChangeField("colorHex", value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Type</label>
+              <div className="flex items-center gap-2">
+                <input
+                  id="is-day-off"
+                  type="checkbox"
+                  checked={shiftIsDayOff}
+                  disabled={hasDayOffShift}
+                  onChange={(e) => onChangeField("isDayOff", e.target.checked)}
+                  className="h-4 w-4"
+                />
+                <label htmlFor="is-day-off" className="text-sm text-muted-foreground">
+                  Mark as singleton Day Off shift
+                </label>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {hasDayOffShift
+                  ? "Day Off shift already exists. Checking box updates current/new one only if existing OFF is archived or edited."
+                  : "No Day Off shift yet. Check box to create one."}
+              </p>
+            </div>
+            <div className="space-y-2">
               <label className="text-sm font-medium">Start time</label>
               <Input
                 type="time"
                 value={shiftStart}
+                disabled={shiftIsDayOff}
                 onChange={(e) => onChangeField("start", e.target.value)}
               />
             </div>
@@ -408,6 +509,7 @@ export function ShiftsSection({
               <Input
                 type="time"
                 value={shiftEnd}
+                disabled={shiftIsDayOff}
                 onChange={(e) => onChangeField("end", e.target.value)}
               />
             </div>
@@ -416,6 +518,7 @@ export function ShiftsSection({
               <Input
                 type="time"
                 value={shiftBreakStart ?? ""}
+                disabled={shiftIsDayOff}
                 onChange={(e) => onChangeField("breakStart", e.target.value)}
               />
             </div>
@@ -424,6 +527,7 @@ export function ShiftsSection({
               <Input
                 type="time"
                 value={shiftBreakEnd ?? ""}
+                disabled={shiftIsDayOff}
                 onChange={(e) => onChangeField("breakEnd", e.target.value)}
               />
             </div>
@@ -447,6 +551,7 @@ export function ShiftsSection({
                   id="spans-midnight"
                   type="checkbox"
                   checked={shiftSpansMidnight}
+                  disabled={shiftIsDayOff}
                   onChange={(e) =>
                     onChangeField("spansMidnight", e.target.checked)
                   }
@@ -481,6 +586,9 @@ export function ShiftsSection({
               <Plus className="h-4 w-4" />
               {shiftSaving ? "Saving..." : "Create shift"}
             </Button>
+          </div>
+          <div className="text-xs text-muted-foreground">
+            Archive keeps old attendance and schedules intact. Active lists hide archived shifts.
           </div>
         </CardContent>
       </Card>

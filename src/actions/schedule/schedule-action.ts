@@ -3,14 +3,14 @@
 import { getEmployeeMonthSchedule as getEmployeeMonthScheduleImpl } from "./employee-month-schedule-action";
 import { getScheduleSnapshot as getScheduleSnapshotImpl } from "./schedule-snapshot-action";
 import {
-  assignPatternToEmployee as assignPatternToEmployeeImpl,
-  createEmployeePatternOverride as createEmployeePatternOverrideImpl,
-} from "./schedule-pattern-assignment-action";
-import {
   deleteScheduleOverride as deleteScheduleOverrideImpl,
   listScheduleOverrides as listScheduleOverridesImpl,
   upsertScheduleOverride as upsertScheduleOverrideImpl,
 } from "./schedule-override-action";
+import {
+  getWeekPlannerSnapshot as getWeekPlannerSnapshotImpl,
+  saveWeekPlannerAssignments as saveWeekPlannerAssignmentsImpl,
+} from "./week-planner-action";
 
 export async function getScheduleSnapshot(
   ...args: Parameters<typeof getScheduleSnapshotImpl>
@@ -42,14 +42,14 @@ export async function deleteScheduleOverride(
   return deleteScheduleOverrideImpl(...args);
 }
 
-export async function assignPatternToEmployee(
-  ...args: Parameters<typeof assignPatternToEmployeeImpl>
+export async function getWeekPlannerSnapshot(
+  ...args: Parameters<typeof getWeekPlannerSnapshotImpl>
 ) {
-  return assignPatternToEmployeeImpl(...args);
+  return getWeekPlannerSnapshotImpl(...args);
 }
 
-export async function createEmployeePatternOverride(
-  ...args: Parameters<typeof createEmployeePatternOverrideImpl>
+export async function saveWeekPlannerAssignments(
+  ...args: Parameters<typeof saveWeekPlannerAssignmentsImpl>
 ) {
-  return createEmployeePatternOverrideImpl(...args);
+  return saveWeekPlannerAssignmentsImpl(...args);
 }

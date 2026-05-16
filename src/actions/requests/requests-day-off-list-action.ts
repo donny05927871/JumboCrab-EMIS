@@ -4,11 +4,11 @@ import { DayOffRequestStatus, Prisma } from "@prisma/client";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import {
+  buildDayOffRequestSelect,
   canCreateEmployeeRequests,
   canReviewRequests,
-  employeeRequestSelect,
   getEmployeeForSession,
-  reviewedBySelect,
+  hasDayOffExtendedColumns,
   serializeDayOffRequest,
   toZonedDayKey,
 } from "./requests-shared";
@@ -16,6 +16,10 @@ import type {
   DayOffRequestRow,
   EmployeeDayOffMonthlySummary,
 } from "./types";
+
+const isMissingColumnError = (error: unknown) =>
+  error instanceof Prisma.PrismaClientKnownRequestError &&
+  /column .* does not exist/i.test(error.message);
 
 export async function getEmployeeDayOffMonthlySummary(input?: {
   year?: number | null;
@@ -161,17 +165,53 @@ export async function listDayOffRequests(input?: {
       where.status = { in: input.statuses };
     }
 
-    const rows = await db.dayOffRequest.findMany({
-      where,
-      orderBy: [{ status: "asc" }, { submittedAt: "desc" }, { createdAt: "desc" }],
-      take: limit,
-      include: {
-        employee: { select: employeeRequestSelect },
-        reviewedBy: { select: reviewedBySelect },
-      },
-    });
+    const includeExtendedColumns = await hasDayOffExtendedColumns();
+    let rows;
 
-    return { success: true, data: rows.map(serializeDayOffRequest) };
+    try {
+      rows = await db.dayOffRequest.findMany({
+        where,
+        orderBy: [{ status: "asc" }, { submittedAt: "desc" }, { createdAt: "desc" }],
+        take: limit,
+        select: buildDayOffRequestSelect(includeExtendedColumns),
+      });
+    } catch (error) {
+      if (!isMissingColumnError(error)) {
+        throw error;
+      }
+
+      rows = await db.dayOffRequest.findMany({
+        where,
+        orderBy: [{ status: "asc" }, { submittedAt: "desc" }, { createdAt: "desc" }],
+        take: limit,
+        select: buildDayOffRequestSelect(false),
+      });
+    }
+
+    return {
+      success: true,
+      data: rows.map((row) =>
+        serializeDayOffRequest({
+          ...row,
+          sourceOffDate: "sourceOffDate" in row ? row.sourceOffDate : null,
+          targetWorkDate: "targetWorkDate" in row ? row.targetWorkDate : null,
+          sourceShiftIdSnapshot:
+            "sourceShiftIdSnapshot" in row ? row.sourceShiftIdSnapshot : null,
+          sourceShiftCodeSnapshot:
+            "sourceShiftCodeSnapshot" in row ? row.sourceShiftCodeSnapshot : null,
+          sourceShiftNameSnapshot:
+            "sourceShiftNameSnapshot" in row ? row.sourceShiftNameSnapshot : null,
+          sourceStartMinutesSnapshot:
+            "sourceStartMinutesSnapshot" in row ? row.sourceStartMinutesSnapshot : null,
+          sourceEndMinutesSnapshot:
+            "sourceEndMinutesSnapshot" in row ? row.sourceEndMinutesSnapshot : null,
+          sourceSpansMidnightSnapshot:
+            "sourceSpansMidnightSnapshot" in row
+              ? row.sourceSpansMidnightSnapshot
+              : null,
+        }),
+      ),
+    };
   } catch (error) {
     console.error("Error listing day off requests:", error);
     return { success: false, error: "Failed to load day off requests." };

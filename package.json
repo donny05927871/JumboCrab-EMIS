@@ -18,6 +18,9 @@
     "prisma:seed:attendance:2-bimonthly": "tsx ./scripts/seedAttendanceTwoBimonthly.ts",
     "postinstall": "npx prisma generate"
   },
+  "engines": {
+    "node": ">=22.13.1"
+  },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
     "@neondatabase/serverless": "^1.0.2",

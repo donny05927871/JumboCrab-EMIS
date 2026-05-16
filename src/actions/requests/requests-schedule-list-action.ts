@@ -8,10 +8,12 @@ import {
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import {
+  buildScheduleChangeRequestSelect,
   canCreateEmployeeRequests,
   canReviewRequests,
   employeeRequestSelect,
   getEmployeeForSession,
+  hasScheduleChangeRangeColumns,
   reviewedBySelect,
   scheduleChangeShiftSelect,
   serializeScheduleChangeRequest,
@@ -199,14 +201,12 @@ export async function listScheduleChangeRequests(input?: {
       where.status = { in: input.statuses };
     }
 
+    const includeRangeColumns = await hasScheduleChangeRangeColumns();
     const rows = await db.scheduleChangeRequest.findMany({
       where,
       orderBy: [{ status: "asc" }, { submittedAt: "desc" }, { createdAt: "desc" }],
       take: limit,
-      include: {
-        employee: { select: employeeRequestSelect },
-        reviewedBy: { select: reviewedBySelect },
-      },
+      select: buildScheduleChangeRequestSelect(includeRangeColumns),
     });
 
     return {

@@ -4,6 +4,8 @@ export const shiftSelect = {
   id: true,
   code: true,
   name: true,
+  colorHex: true,
+  isDayOff: true,
   startMinutes: true,
   endMinutes: true,
   spansMidnight: true,

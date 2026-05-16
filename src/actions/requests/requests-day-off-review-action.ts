@@ -4,7 +4,7 @@ import { ATTENDANCE_STATUS, DayOffRequestStatus } from "@prisma/client";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { startOfZonedDay } from "@/lib/timezone";
-import { cashAdvanceReviewSchema } from "@/lib/validations/requests";
+import { requestReviewSchema } from "@/lib/validations/requests";
 import {
   buildDayOffPreview,
   canReviewRequests,
@@ -35,7 +35,7 @@ export async function reviewDayOffRequest(
       };
     }
 
-    const parsed = cashAdvanceReviewSchema.safeParse(input);
+    const parsed = requestReviewSchema.safeParse(input);
     if (!parsed.success) {
       return {
         success: false,
@@ -98,32 +98,50 @@ export async function reviewDayOffRequest(
       return { success: true, data: serializeDayOffRequest(reviewed) };
     }
 
-    const workDate = startOfZonedDay(existing.workDate);
-    const previewResult = await buildDayOffPreview(existing.employeeId, workDate);
+    const sourceOffDate = startOfZonedDay(existing.sourceOffDate ?? existing.workDate);
+    const targetWorkDate = startOfZonedDay(existing.targetWorkDate ?? existing.workDate);
+    const previewResult = await buildDayOffPreview(
+      existing.employeeId,
+      sourceOffDate,
+      targetWorkDate,
+    );
     if ("error" in previewResult) {
       return { success: false, error: previewResult.error };
     }
-    if (!previewResult.preview.wouldChange) {
+    if (!previewResult.sourceIsDayOff) {
       return {
         success: false,
-        error: "The employee is already not scheduled to work on that date.",
+        error: "The source date is no longer an OFF day.",
       };
     }
-    if (previewResult.currentSnapshot.shiftId !== existing.currentShiftIdSnapshot) {
+    if (!previewResult.targetSnapshot.shiftId || previewResult.targetIsDayOff) {
+      return {
+        success: false,
+        error: "The target date is no longer a scheduled workday.",
+      };
+    }
+    if (previewResult.targetSnapshot.shiftId !== existing.currentShiftIdSnapshot) {
       return {
         success: false,
         error:
-          "The employee's schedule changed after the request was submitted. Ask them to submit a new day off request.",
+          "The target workday schedule changed after the request was submitted. Ask for a new change day off request.",
       };
     }
 
-    const blockingIssue = await getScheduleSwapBlockingIssue(
-      existing.employeeId,
-      workDate,
-      toEmployeeName(existing.employee),
-    );
-    if (blockingIssue) {
-      return { success: false, error: blockingIssue };
+    const [sourceBlockingIssue, targetBlockingIssue] = await Promise.all([
+      getScheduleSwapBlockingIssue(
+        existing.employeeId,
+        sourceOffDate,
+        toEmployeeName(existing.employee),
+      ),
+      getScheduleSwapBlockingIssue(
+        existing.employeeId,
+        targetWorkDate,
+        toEmployeeName(existing.employee),
+      ),
+    ]);
+    if (sourceBlockingIssue || targetBlockingIssue) {
+      return { success: false, error: sourceBlockingIssue ?? targetBlockingIssue ?? undefined };
     }
 
     const reviewed = await db.$transaction(async (tx) => {
@@ -131,41 +149,86 @@ export async function reviewDayOffRequest(
         where: {
           employeeId_workDate: {
             employeeId: existing.employeeId,
-            workDate,
+            workDate: sourceOffDate,
           },
         },
         update: {
-          shiftId: null,
+          shiftId: existing.currentShiftIdSnapshot,
           source: "APPROVED_REQUEST",
-          note: `Day off approved from request ${existing.id}`,
+          note: `Day off transfer source approved from request ${existing.id}`,
         },
         create: {
           employeeId: existing.employeeId,
-          workDate,
-          shiftId: null,
+          workDate: sourceOffDate,
+          shiftId: existing.currentShiftIdSnapshot,
           source: "APPROVED_REQUEST",
-          note: `Day off approved from request ${existing.id}`,
+          note: `Day off transfer source approved from request ${existing.id}`,
         },
       });
 
-      const existingAttendance = await tx.attendance.findUnique({
+      await tx.employeeShiftOverride.upsert({
         where: {
           employeeId_workDate: {
             employeeId: existing.employeeId,
-            workDate,
+            workDate: targetWorkDate,
+          },
+        },
+        update: {
+          shiftId: existing.sourceShiftIdSnapshot,
+          source: "APPROVED_REQUEST",
+          note: `Day off transfer target approved from request ${existing.id}`,
+        },
+        create: {
+          employeeId: existing.employeeId,
+          workDate: targetWorkDate,
+          shiftId: existing.sourceShiftIdSnapshot,
+          source: "APPROVED_REQUEST",
+          note: `Day off transfer target approved from request ${existing.id}`,
+        },
+      });
+
+      const sourceAttendance = await tx.attendance.findUnique({
+        where: {
+          employeeId_workDate: {
+            employeeId: existing.employeeId,
+            workDate: sourceOffDate,
           },
         },
         select: { id: true },
       });
 
-      if (existingAttendance) {
+      if (sourceAttendance) {
         await tx.attendance.update({
-          where: { id: existingAttendance.id },
+          where: { id: sourceAttendance.id },
+          data: {
+            expectedShiftId: existing.currentShiftIdSnapshot,
+            scheduledStartMinutes: existing.currentStartMinutesSnapshot,
+            scheduledEndMinutes: existing.currentEndMinutesSnapshot,
+            paidHoursPerDay: null,
+            leaveRequestId: null,
+            isPaidLeave: false,
+          },
+        });
+      }
+
+      const targetAttendance = await tx.attendance.findUnique({
+        where: {
+          employeeId_workDate: {
+            employeeId: existing.employeeId,
+            workDate: targetWorkDate,
+          },
+        },
+        select: { id: true },
+      });
+
+      if (targetAttendance) {
+        await tx.attendance.update({
+          where: { id: targetAttendance.id },
           data: {
             status: ATTENDANCE_STATUS.REST,
             isPaidLeave: false,
             leaveRequestId: null,
-            expectedShiftId: null,
+            expectedShiftId: existing.sourceShiftIdSnapshot,
             scheduledStartMinutes: null,
             scheduledEndMinutes: null,
             paidHoursPerDay: null,
@@ -191,8 +254,8 @@ export async function reviewDayOffRequest(
     revalidateRequestLayouts();
     await notifyEmployeeOfRequestDecision({
       eventType: "DAY_OFF_REQUEST_APPROVED",
-      title: "Day off request approved",
-      message: "Your day off request was approved.",
+        title: "Day off request approved",
+        message: "Your change day off request was approved.",
       actorUserId: session.userId ?? null,
       employeeId: reviewed.employee.employeeId,
       entityType: "DayOffRequest",

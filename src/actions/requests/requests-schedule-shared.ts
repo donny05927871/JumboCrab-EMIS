@@ -23,6 +23,7 @@ export const scheduleChangeShiftSelect = {
   id: true,
   code: true,
   name: true,
+  colorHex: true,
   startMinutes: true,
   endMinutes: true,
   spansMidnight: true,
@@ -45,7 +46,7 @@ export const formatShiftSnapshotLabel = (input: {
   startMinutes?: number | null;
   endMinutes?: number | null;
 }) => {
-  if (!input.shiftCode && !input.shiftName) return "Rest day";
+  if (!input.shiftCode && !input.shiftName) return "No shift yet";
   const shiftLabel = input.shiftName || input.shiftCode || "Shift";
   const startLabel = formatMinutesForDisplay(input.startMinutes);
   const endLabel = formatMinutesForDisplay(input.endMinutes);
@@ -58,6 +59,7 @@ export const toScheduleChangeShiftOption = (shift: {
   id: number;
   code: string;
   name: string;
+  colorHex?: string | null;
   startMinutes: number;
   endMinutes: number;
   spansMidnight: boolean;
@@ -65,6 +67,7 @@ export const toScheduleChangeShiftOption = (shift: {
   id: shift.id,
   code: shift.code,
   name: shift.name,
+  colorHex: shift.colorHex ?? null,
   shiftLabel: formatShiftSnapshotLabel({
     shiftCode: shift.code,
     shiftName: shift.name,
@@ -90,15 +93,16 @@ const toScheduleSnapshot = (
   shiftId: expected.shift?.id ?? null,
   shiftCode: expected.shift?.code ?? null,
   shiftName: expected.shift?.name ?? null,
-  startMinutes: expected.shift?.startMinutes ?? null,
-  endMinutes: expected.shift?.endMinutes ?? null,
+  startMinutes: expected.scheduledStartMinutes ?? null,
+  endMinutes: expected.scheduledEndMinutes ?? null,
   spansMidnight: expected.shift?.spansMidnight ?? false,
 });
 
 export const buildScheduleChangePreview = async (
   employeeId: string,
   requestedShiftId: number,
-  workDate: Date,
+  startDate: Date,
+  endDate: Date,
 ) => {
   const [employee, requestedShift] = await Promise.all([
     db.employee.findUnique({
@@ -118,25 +122,19 @@ export const buildScheduleChangePreview = async (
     return { error: "Requested shift is not available." } as const;
   }
 
-  const expected = await getExpectedShiftForDate(employee.employeeId, workDate);
-  const currentSnapshot = toScheduleSnapshot(expected);
+  const totalDays =
+    Math.floor((endDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000)) + 1;
 
   return {
     employee,
     requestedShift,
-    currentSnapshot,
     preview: {
-      workDate: workDate.toISOString(),
+      startDate: startDate.toISOString(),
+      endDate: endDate.toISOString(),
       employee: {
         employeeId: employee.employeeId,
         employeeCode: employee.employeeCode,
         employeeName: toEmployeeName(employee),
-      },
-      current: {
-        shiftId: currentSnapshot.shiftId,
-        shiftCode: currentSnapshot.shiftCode,
-        shiftName: currentSnapshot.shiftName,
-        shiftLabel: formatShiftSnapshotLabel(currentSnapshot),
       },
       requested: {
         shiftId: requestedShift.id,
@@ -149,12 +147,16 @@ export const buildScheduleChangePreview = async (
           endMinutes: requestedShift.endMinutes,
         }),
       },
-      wouldChange: currentSnapshot.shiftId !== requestedShift.id,
+      totalDays,
     } satisfies ScheduleChangePreview,
   } as const;
 };
 
-export const buildDayOffPreview = async (employeeId: string, workDate: Date) => {
+export const buildDayOffPreview = async (
+  employeeId: string,
+  sourceOffDate: Date,
+  targetWorkDate: Date,
+) => {
   const employee = await db.employee.findUnique({
     where: { employeeId },
     select: scheduleSwapEmployeeSelect,
@@ -164,27 +166,42 @@ export const buildDayOffPreview = async (employeeId: string, workDate: Date) => 
     return { error: "Employee record not found." } as const;
   }
 
-  const expected = await getExpectedShiftForDate(employee.employeeId, workDate);
-  const currentSnapshot = toScheduleSnapshot(expected);
+  const [sourceExpected, targetExpected] = await Promise.all([
+    getExpectedShiftForDate(employee.employeeId, sourceOffDate),
+    getExpectedShiftForDate(employee.employeeId, targetWorkDate),
+  ]);
+  const sourceSnapshot = toScheduleSnapshot(sourceExpected);
+  const targetSnapshot = toScheduleSnapshot(targetExpected);
 
   return {
     employee,
-    currentSnapshot,
+    sourceSnapshot,
+    targetSnapshot,
+    sourceIsDayOff: Boolean(sourceExpected.shift?.isDayOff),
+    targetIsDayOff: Boolean(targetExpected.shift?.isDayOff),
     preview: {
-      workDate: workDate.toISOString(),
+      sourceOffDate: sourceOffDate.toISOString(),
+      targetWorkDate: targetWorkDate.toISOString(),
       employee: {
         employeeId: employee.employeeId,
         employeeCode: employee.employeeCode,
         employeeName: toEmployeeName(employee),
       },
-      current: {
-        shiftId: currentSnapshot.shiftId,
-        shiftCode: currentSnapshot.shiftCode,
-        shiftName: currentSnapshot.shiftName,
-        shiftLabel: formatShiftSnapshotLabel(currentSnapshot),
+      source: {
+        shiftId: sourceSnapshot.shiftId,
+        shiftCode: sourceSnapshot.shiftCode,
+        shiftName: sourceSnapshot.shiftName,
+        shiftLabel: formatShiftSnapshotLabel(sourceSnapshot),
       },
-      resultLabel: "Day off (rest day)",
-      wouldChange: currentSnapshot.shiftId !== null,
+      target: {
+        shiftId: targetSnapshot.shiftId,
+        shiftCode: targetSnapshot.shiftCode,
+        shiftName: targetSnapshot.shiftName,
+        shiftLabel: formatShiftSnapshotLabel(targetSnapshot),
+      },
+      wouldChange:
+        sourceSnapshot.shiftId !== targetSnapshot.shiftId ||
+        targetSnapshot.shiftId !== null,
     } satisfies DayOffPreview,
   } as const;
 };

@@ -1,6 +1,7 @@
 "use server";
 
 import {
+  CashAdvanceDeductionMode,
   CashAdvanceRequestStatus,
   DeductionAmountMode,
   DeductionFrequency,
@@ -10,6 +11,7 @@ import {
 } from "@prisma/client";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { startOfZonedDay } from "@/lib/timezone";
 import { cashAdvanceReviewSchema } from "@/lib/validations/requests";
 import {
   CASH_ADVANCE_DEDUCTION_CODE,
@@ -21,6 +23,25 @@ import {
 } from "./requests-shared";
 import { notifyEmployeeOfRequestDecision } from "./requests-notifications";
 import type { CashAdvanceRequestRow, RequestReviewPayload } from "./types";
+
+const resolveDefaultNextPayrollDate = async () => {
+  const today = startOfZonedDay(new Date());
+  const activeOrLatest = await db.payroll.findFirst({
+    where: {
+      payrollPeriodEnd: { gte: today },
+    },
+    orderBy: { payrollPeriodEnd: "asc" },
+    select: { payrollPeriodEnd: true },
+  });
+
+  if (activeOrLatest) {
+    return startOfZonedDay(
+      new Date(activeOrLatest.payrollPeriodEnd.getTime() + 24 * 60 * 60 * 1000),
+    );
+  }
+
+  return today;
+};
 
 export async function reviewCashAdvanceRequest(
   input: RequestReviewPayload,
@@ -136,6 +157,18 @@ export async function reviewCashAdvanceRequest(
       };
     }
 
+    const approvedAmount = Number(parsed.data.approvedAmount);
+    const approvedDeductionMode =
+      parsed.data.deductionMode === CashAdvanceDeductionMode.INSTALLMENTS
+        ? CashAdvanceDeductionMode.INSTALLMENTS
+        : CashAdvanceDeductionMode.FULL_NEXT_PAYROLL;
+    const approvedRepaymentPerPayroll =
+      approvedDeductionMode === CashAdvanceDeductionMode.FULL_NEXT_PAYROLL
+        ? approvedAmount
+        : Number(parsed.data.approvedRepaymentPerPayroll);
+    const approvedEffectiveFrom =
+      parsed.data.approvedEffectiveFrom ?? (await resolveDefaultNextPayrollDate());
+
     const duplicateAssignmentMessage =
       "A cash advance deduction already exists for this employee on the selected start date. Adjust the request start date or settle the existing record first.";
 
@@ -168,10 +201,10 @@ export async function reviewCashAdvanceRequest(
           data: {
             employeeId: fresh.employeeId,
             deductionTypeId: deductionType.id,
-            effectiveFrom: fresh.preferredStartDate,
-            installmentTotal: fresh.amount,
-            installmentPerPayroll: fresh.repaymentPerPayroll,
-            remainingBalance: fresh.amount,
+            effectiveFrom: approvedEffectiveFrom,
+            installmentTotal: approvedAmount,
+            installmentPerPayroll: approvedRepaymentPerPayroll,
+            remainingBalance: approvedAmount,
             workflowStatus: EmployeeDeductionWorkflowStatus.APPROVED,
             status: EmployeeDeductionAssignmentStatus.ACTIVE,
             reason: fresh.reason
@@ -197,6 +230,10 @@ export async function reviewCashAdvanceRequest(
             managerRemarks: parsed.data.managerRemarks ?? null,
             reviewedByUserId: session.userId ?? null,
             reviewedAt: now,
+            approvedAmount,
+            approvedDeductionMode,
+            approvedRepaymentPerPayroll,
+            approvedEffectiveFrom,
             deductionAssignmentId: assignment.id,
           },
           include: {

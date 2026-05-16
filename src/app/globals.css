@@ -250,16 +250,6 @@
   background: color-mix(in srgb, var(--primary) 12%, transparent);
 }
 
-/* I use day-cell tints as secondary indicators. The stronger event card
-   below carries the main status so the calendar does not feel too noisy. */
-.employee-schedule-calendar--modern .rbc-day-bg.rbc-pattern-day {
-  background: color-mix(in srgb, var(--schedule-pattern) 7%, transparent);
-}
-
-.employee-schedule-calendar--modern .rbc-day-bg.rbc-override-day {
-  background: color-mix(in srgb, var(--schedule-override) 8%, transparent);
-}
-
 .employee-schedule-calendar--modern .rbc-day-bg.rbc-paid-leave-day {
   background: color-mix(in srgb, var(--schedule-paid-leave) 9%, transparent);
 }
@@ -323,28 +313,11 @@
   line-height: 1.25;
 }
 
-/* I make the event card the main signal because that is what people read first.
-   Filled states communicate the default schedule, while the override style feels
-   intentionally different to show that someone manually intervened. */
 .employee-schedule-calendar--modern .rbc-event.rbc-shift-event {
-  border-color: var(--schedule-pattern);
-  background: linear-gradient(
-    135deg,
-    color-mix(in srgb, var(--schedule-pattern) 92%, white),
-    color-mix(in srgb, var(--schedule-pattern) 78%, black)
-  );
-  color: var(--schedule-pattern-foreground);
-  box-shadow: 0 6px 14px
-    color-mix(in srgb, var(--schedule-pattern) 24%, transparent);
-}
-
-.employee-schedule-calendar--modern
-  .rbc-event.rbc-shift-event.rbc-override-event {
-  border: 1px solid var(--schedule-override);
-  background: color-mix(in srgb, var(--schedule-override) 8%, transparent);
-  color: var(--schedule-override);
-  box-shadow: inset 0 0 0 1px
-    color-mix(in srgb, var(--schedule-override) 20%, transparent);
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--card) 82%, transparent);
+  color: var(--foreground);
+  box-shadow: none;
 }
 
 .employee-schedule-calendar--modern .rbc-event.rbc-leave-event {
@@ -367,54 +340,20 @@
   color: var(--schedule-rest);
 }
 
-/* I keep the legend token styles here so the legend, calendar, and detail badges
-   all reference the same schedule palette instead of drifting apart. */
-.employee-schedule-legend-dot {
-  display: inline-block;
-  height: 0.65rem;
-  width: 0.65rem;
-  margin-right: 0.6rem;
-  border-radius: 9999px;
-  vertical-align: middle;
-}
-
-.employee-schedule-legend-dot--pattern {
-  background: var(--schedule-pattern);
-}
-
-.employee-schedule-legend-dot--override {
-  border: 2px solid var(--schedule-override);
-  background: color-mix(in srgb, var(--schedule-override) 10%, transparent);
-}
-
-.employee-schedule-legend-dot--paid-leave {
-  background: var(--schedule-paid-leave);
-}
-
-.employee-schedule-legend-dot--unpaid-leave {
-  background: var(--schedule-unpaid-leave);
-}
-
-.employee-schedule-legend-dot--rest {
-  background: color-mix(in srgb, var(--schedule-rest) 70%, white 30%);
-}
-
 .employee-schedule-status-badge {
   font-weight: 500;
-}
-
-/* I reuse the same palette in the side panel so the explanation view
-   supports the same mental model as the calendar view. */
-.employee-schedule-status-badge--pattern {
-  border-color: color-mix(in srgb, var(--schedule-pattern) 45%, transparent);
-  background: color-mix(in srgb, var(--schedule-pattern) 10%, transparent);
-  color: var(--schedule-pattern);
 }
 
 .employee-schedule-status-badge--override {
   border-color: color-mix(in srgb, var(--schedule-override) 45%, transparent);
   background: color-mix(in srgb, var(--schedule-override) 10%, transparent);
   color: var(--schedule-override);
+}
+
+.employee-schedule-status-badge--neutral {
+  border-color: color-mix(in srgb, var(--border) 95%, transparent);
+  background: color-mix(in srgb, var(--muted) 40%, transparent);
+  color: var(--muted-foreground);
 }
 
 .employee-schedule-status-badge--paid-leave {
@@ -431,12 +370,6 @@
   );
   background: color-mix(in srgb, var(--schedule-unpaid-leave) 10%, transparent);
   color: var(--schedule-unpaid-leave);
-}
-
-.employee-schedule-status-badge--rest {
-  border-color: color-mix(in srgb, var(--schedule-rest) 35%, transparent);
-  background: color-mix(in srgb, var(--schedule-rest) 8%, transparent);
-  color: var(--schedule-rest);
 }
 
 @media (max-width: 640px) {

@@ -68,17 +68,21 @@ export function NotificationBell() {
               <DropdownMenuItem
                 key={item.id}
                 asChild
-                className="mb-1 rounded-xl p-0 focus:bg-accent/50"
+                className="mb-1 items-start rounded-xl p-0 text-left focus:bg-accent/50"
               >
                 <Link
                   href={item.linkHref}
-                  className="flex w-full flex-col gap-1 px-3 py-3"
+                  className="flex w-full flex-col items-start gap-1 px-3 py-3 text-left"
                   onClick={() => {
                     void markRead([item.id]);
                   }}
                 >
                   <div className="flex items-start justify-between gap-3">
-                    <span className="line-clamp-1 text-sm font-medium">
+                    <span
+                      className={`line-clamp-1 text-sm ${
+                        !item.readAt ? "font-semibold text-foreground" : "font-medium"
+                      }`}
+                    >
                       {item.title}
                     </span>
                     {!item.readAt ? (
@@ -87,10 +91,20 @@ export function NotificationBell() {
                       </Badge>
                     ) : null}
                   </div>
-                  <p className="line-clamp-2 text-xs text-muted-foreground">
+                  <p
+                    className={`line-clamp-2 text-xs ${
+                      !item.readAt
+                        ? "font-semibold text-foreground/90"
+                        : "text-muted-foreground"
+                    }`}
+                  >
                     {item.message}
                   </p>
-                  <span className="text-[11px] text-muted-foreground">
+                  <span
+                    className={`text-[11px] ${
+                      !item.readAt ? "font-medium text-foreground/70" : "text-muted-foreground"
+                    }`}
+                  >
                     {formatTimestamp(item.createdAt)}
                   </span>
                 </Link>

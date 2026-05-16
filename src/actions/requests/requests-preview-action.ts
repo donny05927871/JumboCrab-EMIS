@@ -21,7 +21,8 @@ import type {
 } from "./types";
 
 export async function getDayOffPreview(input: {
-  workDate: string | Date;
+  sourceOffDate: string | Date;
+  targetWorkDate: string | Date;
 }): Promise<{
   success: boolean;
   data?: DayOffPreview;
@@ -40,7 +41,8 @@ export async function getDayOffPreview(input: {
     }
 
     const parsed = dayOffRequestSchema.safeParse({
-      workDate: input.workDate,
+      sourceOffDate: input.sourceOffDate,
+      targetWorkDate: input.targetWorkDate,
       reason: undefined,
     });
     if (!parsed.success) {
@@ -55,8 +57,13 @@ export async function getDayOffPreview(input: {
       return { success: false, error: "Employee record not found." };
     }
 
-    const workDate = startOfZonedDay(parsed.data.workDate!);
-    const previewResult = await buildDayOffPreview(employee.employeeId, workDate);
+    const sourceOffDate = startOfZonedDay(parsed.data.sourceOffDate!);
+    const targetWorkDate = startOfZonedDay(parsed.data.targetWorkDate!);
+    const previewResult = await buildDayOffPreview(
+      employee.employeeId,
+      sourceOffDate,
+      targetWorkDate,
+    );
     if ("error" in previewResult) {
       return { success: false, error: previewResult.error };
     }
@@ -133,7 +140,8 @@ export async function getScheduleSwapPreview(input: {
 
 export async function getScheduleChangePreview(input: {
   requestedShiftId: string | number;
-  workDate: string | Date;
+  startDate: string | Date;
+  endDate: string | Date;
 }): Promise<{
   success: boolean;
   data?: ScheduleChangePreview;
@@ -168,11 +176,13 @@ export async function getScheduleChangePreview(input: {
       return { success: false, error: "Employee record not found." };
     }
 
-    const workDate = startOfZonedDay(parsed.data.workDate!);
+    const startDate = startOfZonedDay(parsed.data.startDate!);
+    const endDate = startOfZonedDay(parsed.data.endDate!);
     const previewResult = await buildScheduleChangePreview(
       employee.employeeId,
       parsed.data.requestedShiftId!,
-      workDate,
+      startDate,
+      endDate,
     );
 
     if ("error" in previewResult) {

@@ -1,7 +1,11 @@
 import {
+  CashAdvanceDeductionMode,
   CashAdvanceRequestStatus,
   DayOffRequestStatus,
   EmployeeDeductionAssignmentStatus,
+  LeaveCreditLedgerEntryType,
+  LeaveCreditResetRunType,
+  LeaveCreditType,
   LeaveRequestStatus,
   LeaveRequestType,
   ScheduleChangeRequestStatus,
@@ -10,8 +14,7 @@ import {
 
 export type CashAdvanceRequestPayload = {
   amount: string | number;
-  repaymentPerPayroll: string | number;
-  preferredStartDate: string | Date;
+  preferredStartDate?: string | Date | null;
   reason?: string | null;
 };
 
@@ -23,7 +26,8 @@ export type LeaveRequestPayload = {
 };
 
 export type DayOffRequestPayload = {
-  workDate: string | Date;
+  sourceOffDate: string | Date;
+  targetWorkDate: string | Date;
   reason?: string | null;
 };
 
@@ -34,7 +38,8 @@ export type ScheduleSwapRequestPayload = {
 };
 
 export type ScheduleChangeRequestPayload = {
-  workDate: string | Date;
+  startDate: string | Date;
+  endDate: string | Date;
   requestedShiftId: string | number;
   reason?: string | null;
 };
@@ -43,7 +48,10 @@ export type RequestReviewPayload = {
   id: string;
   decision: "APPROVED" | "REJECTED";
   managerRemarks?: string | null;
-  paidDates?: Array<string | Date> | null;
+  approvedAmount?: string | number | null;
+  deductionMode?: CashAdvanceDeductionMode | "FULL_NEXT_PAYROLL" | "INSTALLMENTS" | null;
+  approvedRepaymentPerPayroll?: string | number | null;
+  approvedEffectiveFrom?: string | Date | null;
 };
 
 export type ScheduleSwapCoworkerReviewPayload = {
@@ -60,6 +68,10 @@ export type CashAdvanceRequestRow = {
   amount: number;
   repaymentPerPayroll: number;
   preferredStartDate: string;
+  approvedAmount?: number | null;
+  approvedDeductionMode?: CashAdvanceDeductionMode | null;
+  approvedRepaymentPerPayroll?: number | null;
+  approvedEffectiveFrom?: string | null;
   reason?: string | null;
   status: CashAdvanceRequestStatus;
   managerRemarks?: string | null;
@@ -80,6 +92,7 @@ export type LeaveRequestRow = {
   employeeCode: string;
   employeeName: string;
   leaveType: LeaveRequestType;
+  leaveCreditType: LeaveCreditType | null;
   startDate: string;
   endDate: string;
   reason?: string | null;
@@ -91,20 +104,34 @@ export type LeaveRequestRow = {
   createdAt: string;
   updatedAt: string;
   totalDays: number;
+  creditDaysUsed: number;
   paidDaysCount: number;
   unpaidDaysCount: number;
   paidDateList: string[];
   unpaidDateList: string[];
 };
 
+export type EmployeeLeaveCreditBucketSummary = {
+  leaveType: LeaveCreditType;
+  annualCredits: number;
+  used: number;
+  remaining: number;
+  cycleStartDate: string;
+  resetMonth: number;
+  resetDay: number;
+};
+
 export type EmployeeLeaveBalanceSummary = {
-  year: number;
-  paidLeaveAllowance: number;
-  paidLeaveUsed: number;
-  paidLeaveRemaining: number;
-  paidSickLeaveAllowance: number;
-  paidSickLeaveUsed: number;
-  paidSickLeaveRemaining: number;
+  referenceDate: string;
+  sick: EmployeeLeaveCreditBucketSummary;
+  sil: EmployeeLeaveCreditBucketSummary;
+  year?: number;
+  paidLeaveAllowance?: number;
+  paidLeaveUsed?: number;
+  paidLeaveRemaining?: number;
+  paidSickLeaveAllowance?: number;
+  paidSickLeaveUsed?: number;
+  paidSickLeaveRemaining?: number;
 };
 
 export type EmployeeDayOffMonthlySummary = {
@@ -115,19 +142,25 @@ export type EmployeeDayOffMonthlySummary = {
 };
 
 export type DayOffPreview = {
-  workDate: string;
+  sourceOffDate: string;
+  targetWorkDate: string;
   employee: {
     employeeId: string;
     employeeCode: string;
     employeeName: string;
   };
-  current: {
+  source: {
     shiftId: number | null;
     shiftCode: string | null;
     shiftName: string | null;
     shiftLabel: string;
   };
-  resultLabel: string;
+  target: {
+    shiftId: number | null;
+    shiftCode: string | null;
+    shiftName: string | null;
+    shiftLabel: string;
+  };
   wouldChange: boolean;
 };
 
@@ -137,7 +170,11 @@ export type DayOffRequestRow = {
   employeeCode: string;
   employeeName: string;
   workDate: string;
+  sourceOffDate: string;
+  targetWorkDate: string;
   currentShiftLabel: string;
+  sourceShiftLabel: string;
+  targetShiftLabel: string;
   reason?: string | null;
   status: DayOffRequestStatus;
   managerRemarks?: string | null;
@@ -152,21 +189,17 @@ export type ScheduleChangeShiftOption = {
   id: number;
   code: string;
   name: string;
+  colorHex?: string | null;
   shiftLabel: string;
 };
 
 export type ScheduleChangePreview = {
-  workDate: string;
+  startDate: string;
+  endDate: string;
   employee: {
     employeeId: string;
     employeeCode: string;
     employeeName: string;
-  };
-  current: {
-    shiftId: number | null;
-    shiftCode: string | null;
-    shiftName: string | null;
-    shiftLabel: string;
   };
   requested: {
     shiftId: number;
@@ -174,7 +207,7 @@ export type ScheduleChangePreview = {
     shiftName: string;
     shiftLabel: string;
   };
-  wouldChange: boolean;
+  totalDays: number;
 };
 
 export type ScheduleChangeRequestRow = {
@@ -183,6 +216,9 @@ export type ScheduleChangeRequestRow = {
   employeeCode: string;
   employeeName: string;
   workDate: string;
+  startDate: string;
+  endDate: string;
+  totalDays: number;
   currentShiftLabel: string;
   requestedShiftLabel: string;
   requestedShiftId: number;
@@ -248,4 +284,47 @@ export type ScheduleSwapRequestRow = {
   updatedAt: string;
   isIncomingToViewer: boolean;
   isOutgoingFromViewer: boolean;
+};
+
+export type LeaveCreditPolicyRow = {
+  id: string;
+  leaveType: LeaveCreditType;
+  annualCredits: number;
+  resetMonth: number;
+  resetDay: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type LeaveCreditResetRunRow = {
+  id: string;
+  policyId: string;
+  leaveType: LeaveCreditType;
+  cycleStartDate: string;
+  cycleEndDate: string;
+  effectiveDate: string;
+  annualCredits: number;
+  employeeCount: number;
+  runType: LeaveCreditResetRunType;
+  notes?: string | null;
+  initiatedByUserId?: string | null;
+  createdAt: string;
+};
+
+export type EmployeeLeaveCreditLedgerRow = {
+  id: string;
+  employeeId: string;
+  employeeCode: string;
+  employeeName: string;
+  leaveType: LeaveCreditType;
+  entryType: LeaveCreditLedgerEntryType;
+  amount: number;
+  balanceBefore: number;
+  balanceAfter: number;
+  effectiveDate: string;
+  cycleStartDate: string;
+  notes?: string | null;
+  leaveRequestId?: string | null;
+  resetRunId?: string | null;
+  createdAt: string;
 };

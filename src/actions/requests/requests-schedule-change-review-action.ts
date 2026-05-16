@@ -1,13 +1,15 @@
 "use server";
 
 import { ScheduleChangeRequestStatus } from "@prisma/client";
+import { getExpectedShiftForDate } from "@/lib/attendance";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { startOfZonedDay } from "@/lib/timezone";
-import { cashAdvanceReviewSchema } from "@/lib/validations/requests";
+import { requestReviewSchema } from "@/lib/validations/requests";
 import {
   buildScheduleChangePreview,
   canReviewRequests,
+  enumerateZonedDaysInclusive,
   employeeRequestSelect,
   getScheduleSwapBlockingIssue,
   revalidateRequestLayouts,
@@ -38,7 +40,7 @@ export async function reviewScheduleChangeRequest(
       };
     }
 
-    const parsed = cashAdvanceReviewSchema.safeParse(input);
+    const parsed = requestReviewSchema.safeParse(input);
     if (!parsed.success) {
       return {
         success: false,
@@ -101,24 +103,21 @@ export async function reviewScheduleChangeRequest(
       return { success: true, data: serializeScheduleChangeRequest(reviewed) };
     }
 
-    const workDate = startOfZonedDay(existing.workDate);
+    const startDate = startOfZonedDay(existing.startDate ?? existing.workDate);
+    const endDate = startOfZonedDay(existing.endDate ?? existing.workDate);
     const previewResult = await buildScheduleChangePreview(
       existing.employeeId,
       existing.requestedShiftId,
-      workDate,
+      startDate,
+      endDate,
     );
 
     if ("error" in previewResult) {
       return { success: false, error: previewResult.error };
     }
-    if (!previewResult.preview.wouldChange) {
-      return {
-        success: false,
-        error:
-          "The employee is already assigned to that shift on the requested date.",
-      };
-    }
-    if (previewResult.currentSnapshot.shiftId !== existing.currentShiftIdSnapshot) {
+    const requestDates = enumerateZonedDaysInclusive(startDate, endDate);
+    const firstExpected = await getExpectedShiftForDate(existing.employeeId, startDate);
+    if (firstExpected.shift?.id !== existing.currentShiftIdSnapshot) {
       return {
         success: false,
         error:
@@ -126,56 +125,70 @@ export async function reviewScheduleChangeRequest(
       };
     }
 
-    const blockingIssue = await getScheduleSwapBlockingIssue(
-      existing.employeeId,
-      workDate,
-      toEmployeeName(existing.employee),
-    );
-    if (blockingIssue) {
-      return { success: false, error: blockingIssue };
+    for (const day of requestDates) {
+      const issue = await getScheduleSwapBlockingIssue(
+        existing.employeeId,
+        day,
+        toEmployeeName(existing.employee),
+      );
+      if (issue) {
+        return { success: false, error: issue };
+      }
+      const expected =
+        day.getTime() === startDate.getTime()
+          ? firstExpected
+          : await getExpectedShiftForDate(existing.employeeId, day);
+      if (!expected.shift || expected.shift.isDayOff) {
+        return {
+          success: false,
+          error: "Every day in the approved range must still be a scheduled workday.",
+        };
+      }
     }
 
     const reviewed = await db.$transaction(async (tx) => {
-      await tx.employeeShiftOverride.upsert({
-        where: {
-          employeeId_workDate: {
+      for (const workDate of requestDates) {
+        await tx.employeeShiftOverride.upsert({
+          where: {
+            employeeId_workDate: {
+              employeeId: existing.employeeId,
+              workDate,
+            },
+          },
+          update: {
+            shiftId: existing.requestedShiftId,
+            source: "APPROVED_REQUEST",
+            note: `Schedule change approved from request ${existing.id}`,
+          },
+          create: {
             employeeId: existing.employeeId,
             workDate,
-          },
-        },
-        update: {
-          shiftId: existing.requestedShiftId,
-          source: "APPROVED_REQUEST",
-          note: `Schedule change approved from request ${existing.id}`,
-        },
-        create: {
-          employeeId: existing.employeeId,
-          workDate,
-          shiftId: existing.requestedShiftId,
-          source: "APPROVED_REQUEST",
-          note: `Schedule change approved from request ${existing.id}`,
-        },
-      });
-
-      const existingAttendance = await tx.attendance.findUnique({
-        where: {
-          employeeId_workDate: {
-            employeeId: existing.employeeId,
-            workDate,
-          },
-        },
-        select: { id: true },
-      });
-
-      if (existingAttendance) {
-        await tx.attendance.update({
-          where: { id: existingAttendance.id },
-          data: {
-            expectedShiftId: existing.requestedShiftId,
-            scheduledStartMinutes: existing.requestedStartMinutesSnapshot,
-            scheduledEndMinutes: existing.requestedEndMinutesSnapshot,
+            shiftId: existing.requestedShiftId,
+            source: "APPROVED_REQUEST",
+            note: `Schedule change approved from request ${existing.id}`,
           },
         });
+
+        const existingAttendance = await tx.attendance.findUnique({
+          where: {
+            employeeId_workDate: {
+              employeeId: existing.employeeId,
+              workDate,
+            },
+          },
+          select: { id: true },
+        });
+
+        if (existingAttendance) {
+          await tx.attendance.update({
+            where: { id: existingAttendance.id },
+            data: {
+              expectedShiftId: existing.requestedShiftId,
+              scheduledStartMinutes: existing.requestedStartMinutesSnapshot,
+              scheduledEndMinutes: existing.requestedEndMinutesSnapshot,
+            },
+          });
+        }
       }
 
       return tx.scheduleChangeRequest.update({

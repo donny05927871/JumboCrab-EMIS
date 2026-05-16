@@ -3,15 +3,22 @@
 import { LeaveRequestStatus } from "@prisma/client";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { startOfZonedDay } from "@/lib/timezone";
 import { leaveRequestSchema } from "@/lib/validations/requests";
 import {
   canCreateEmployeeRequests,
+  DAY_MS,
   employeeRequestSelect,
+  enumerateZonedDaysInclusive,
   getEmployeeForSession,
   revalidateRequestLayouts,
   reviewedBySelect,
   serializeLeaveRequest,
 } from "./requests-shared";
+import {
+  getEmployeeLeaveCredits,
+  toLeaveCreditType,
+} from "./requests-leave-credit-shared";
 import { notifyManagersOfRequest } from "./requests-notifications";
 import type { LeaveRequestPayload, LeaveRequestRow } from "./types";
 
@@ -47,17 +54,58 @@ export async function createLeaveRequest(
       return { success: false, error: "Employee record not found." };
     }
 
+    const startDate = startOfZonedDay(parsed.data.startDate!);
+    const endDate = startOfZonedDay(parsed.data.endDate!);
+    const leaveDates = enumerateZonedDaysInclusive(startDate, endDate);
+    const leaveDays = leaveDates.length;
+    const leaveCreditType = toLeaveCreditType(parsed.data.leaveType);
+
+    if (leaveCreditType) {
+      const credits = await getEmployeeLeaveCredits({
+        employeeId: employee.employeeId,
+        employeeStartDate: employee.startDate ?? new Date(),
+        referenceDate: startDate,
+      });
+      const bucket =
+        leaveCreditType === "SICK" ? credits.sick : credits.sil;
+
+      if (bucket.balance <= 0) {
+        return {
+          success: false,
+          error: `${parsed.data.leaveType} credits are already at zero.`,
+        };
+      }
+      if (leaveDays > bucket.balance) {
+        return {
+          success: false,
+          error: `Only ${bucket.balance} ${parsed.data.leaveType} credit${bucket.balance === 1 ? "" : "s"} remain.`,
+        };
+      }
+    }
+
+    if (parsed.data.leaveType === "SIL") {
+      const minimumAllowed = new Date(startOfZonedDay(new Date()).getTime() + 14 * DAY_MS);
+      const invalidDay = leaveDates.find((day) => day.getTime() < minimumAllowed.getTime());
+      if (invalidDay) {
+        return {
+          success: false,
+          error: "Service Incentive Leave must be requested at least 14 days in advance.",
+        };
+      }
+    }
+
     const overlapping = await db.leaveRequest.findFirst({
       where: {
         employeeId: employee.employeeId,
+        leaveType: { in: ["SICK", "SIL", "UNPAID"] },
         status: {
           in: [LeaveRequestStatus.PENDING_MANAGER, LeaveRequestStatus.APPROVED],
         },
         startDate: {
-          lte: parsed.data.endDate!,
+          lte: endDate,
         },
         endDate: {
-          gte: parsed.data.startDate!,
+          gte: startDate,
         },
       },
       select: { id: true },
@@ -75,8 +123,8 @@ export async function createLeaveRequest(
       data: {
         employeeId: employee.employeeId,
         leaveType: parsed.data.leaveType,
-        startDate: parsed.data.startDate!,
-        endDate: parsed.data.endDate!,
+        startDate,
+        endDate,
         reason: parsed.data.reason ?? null,
         status: LeaveRequestStatus.PENDING_MANAGER,
       },
@@ -86,7 +134,6 @@ export async function createLeaveRequest(
         attendances: {
           select: {
             workDate: true,
-            isPaidLeave: true,
           },
         },
       },

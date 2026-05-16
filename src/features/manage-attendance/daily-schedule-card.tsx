@@ -13,7 +13,7 @@ import {
 import { TableLoadingState } from "@/components/loading/loading-states";
 import { cn } from "@/lib/utils";
 import { RefreshCcw } from "lucide-react";
-import { ScheduleEntry, formatMinutes } from "@/types/schedule-types";
+import { ScheduleEntry, formatMinutes, shiftColorStyle } from "@/types/schedule-types";
 
 type DailyScheduleCardProps = {
   date: string;
@@ -92,7 +92,13 @@ export function DailyScheduleCard({
                       </div>
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
-                      {entry.shift?.name || "Rest day"}
+                      {entry.shift ? (
+                        <Badge variant="outline" style={shiftColorStyle(entry.shift)}>
+                          {entry.shift.code} {entry.shift.isDayOff ? "· Day Off" : `· ${entry.shift.name}`}
+                        </Badge>
+                      ) : (
+                        "Unassigned"
+                      )}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {entry.shift

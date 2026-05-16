@@ -8,12 +8,13 @@ import {
 } from "@prisma/client";
 import { db } from "./db";
 import { startOfZonedDay, endOfZonedDay, TZ } from "./timezone";
+import { normalizeWeekStart } from "./week-planner";
 
 type ExpectedShift = {
   shift: Shift | null;
   scheduledStartMinutes: number | null;
   scheduledEndMinutes: number | null;
-  source: "override" | "pattern" | "none";
+  source: "override" | "weekly_schedule" | "none";
 };
 
 type DayKey = "sun" | "mon" | "tue" | "wed" | "thu" | "fri" | "sat";
@@ -46,6 +47,7 @@ const leaveTypeToCurrentStatus = (
       return CURRENT_STATUS.VACATION;
     case LeaveRequestType.SICK:
       return CURRENT_STATUS.SICK_LEAVE;
+    case LeaveRequestType.SIL:
     case LeaveRequestType.PERSONAL:
     case LeaveRequestType.EMERGENCY:
     case LeaveRequestType.UNPAID:
@@ -447,13 +449,16 @@ export async function getExpectedShiftForDate(
     };
   }
 
-  const patternAssignment = await db.employeePatternAssignment.findFirst({
-    where: { employeeId, effectiveDate: { lte: dayStart } },
-    orderBy: { effectiveDate: "desc" },
-    include: { pattern: true },
+  const weeklySchedule = await db.weeklySchedule.findUnique({
+    where: {
+      employeeId_weekStart: {
+        employeeId,
+        weekStart: normalizeWeekStart(dayStart),
+      },
+    },
   });
 
-  if (!patternAssignment?.pattern) {
+  if (!weeklySchedule) {
     return {
       shift: null,
       scheduledStartMinutes: null,
@@ -462,57 +467,21 @@ export async function getExpectedShiftForDate(
     };
   }
 
-  const pattern = patternAssignment.pattern;
   const key = dayKey(dayStart);
-  const shiftIdsByDay: Record<
-    DayKey,
-    { snapshot: number | null; fromPattern: number | null }
-  > = {
-    sun: {
-      snapshot: patternAssignment.sunShiftIdSnapshot,
-      fromPattern: pattern.sunShiftId,
-    },
-    mon: {
-      snapshot: patternAssignment.monShiftIdSnapshot,
-      fromPattern: pattern.monShiftId,
-    },
-    tue: {
-      snapshot: patternAssignment.tueShiftIdSnapshot,
-      fromPattern: pattern.tueShiftId,
-    },
-    wed: {
-      snapshot: patternAssignment.wedShiftIdSnapshot,
-      fromPattern: pattern.wedShiftId,
-    },
-    thu: {
-      snapshot: patternAssignment.thuShiftIdSnapshot,
-      fromPattern: pattern.thuShiftId,
-    },
-    fri: {
-      snapshot: patternAssignment.friShiftIdSnapshot,
-      fromPattern: pattern.friShiftId,
-    },
-    sat: {
-      snapshot: patternAssignment.satShiftIdSnapshot,
-      fromPattern: pattern.satShiftId,
-    },
-  };
-  const snapshotValues = Object.values(shiftIdsByDay).map(
-    (entry) => entry.snapshot,
-  );
-  const patternValues = Object.values(shiftIdsByDay).map(
-    (entry) => entry.fromPattern,
-  );
-  const hasAnySnapshotValue = snapshotValues.some((value) => value !== null);
-  const patternHasAnyValue = patternValues.some((value) => value !== null);
-  const useSnapshotValues =
-    hasAnySnapshotValue ||
-    (typeof patternAssignment.reason === "string" &&
-      patternAssignment.reason.startsWith("OVERRIDE_FROM:")) ||
-    !patternHasAnyValue;
-  const shiftId = useSnapshotValues
-    ? shiftIdsByDay[key].snapshot
-    : shiftIdsByDay[key].fromPattern;
+  const shiftId =
+    key === "sun"
+      ? weeklySchedule.sunShiftId
+      : key === "mon"
+        ? weeklySchedule.monShiftId
+        : key === "tue"
+          ? weeklySchedule.tueShiftId
+          : key === "wed"
+            ? weeklySchedule.wedShiftId
+            : key === "thu"
+              ? weeklySchedule.thuShiftId
+              : key === "fri"
+                ? weeklySchedule.friShiftId
+                : weeklySchedule.satShiftId;
 
   if (!shiftId) {
     return {
@@ -535,9 +504,9 @@ export async function getExpectedShiftForDate(
 
   return {
     shift,
-    scheduledStartMinutes: shift.startMinutes,
-    scheduledEndMinutes: shift.endMinutes,
-    source: "pattern",
+    scheduledStartMinutes: shift.isDayOff ? null : shift.startMinutes,
+    scheduledEndMinutes: shift.isDayOff ? null : shift.endMinutes,
+    source: "weekly_schedule",
   };
 }
 
@@ -559,7 +528,9 @@ export async function recomputeAttendanceForDay(
   });
 
   const expected = await getExpectedShiftForDate(employeeId, dayStart);
-  const paidHoursPerDay = expected.shift?.paidHoursPerDay ?? null;
+  const expectedWorkShift =
+    expected.shift && !expected.shift.isDayOff ? expected.shift : null;
+  const paidHoursPerDay = expectedWorkShift?.paidHoursPerDay ?? null;
   const approvedLeave = await db.leaveRequest.findFirst({
     where: {
       employeeId,
@@ -669,14 +640,14 @@ export async function recomputeAttendanceForDay(
       : null;
   const scheduledBreakMinutes = Math.max(
     0,
-    expected.shift?.breakMinutesUnpaid ?? 0,
+    expectedWorkShift?.breakMinutesUnpaid ?? 0,
   );
   const { deductedBreakMinutes, netWorkedMinutes } = computeBreakDeduction({
     workedMinutes,
     actualBreakMinutes: breakMinutes,
     scheduledBreakMinutes,
-    breakStartMinutes: expected.shift?.breakStartMinutes ?? null,
-    breakEndMinutes: expected.shift?.breakEndMinutes ?? null,
+    breakStartMinutes: expectedWorkShift?.breakStartMinutes ?? null,
+    breakEndMinutes: expectedWorkShift?.breakEndMinutes ?? null,
     actualInMinutes,
     actualOutMinutes,
   });
@@ -700,7 +671,7 @@ export async function recomputeAttendanceForDay(
     computeLateMinutes(expected.scheduledStartMinutes, actualInMinutes) ?? 0;
   // ATTENDANCE - Rest Day / Day Off Logic
   // If no schedule exists for the day, treat it as REST by default.
-  let status: ATTENDANCE_STATUS = expected.shift
+  let status: ATTENDANCE_STATUS = expectedWorkShift
     ? ATTENDANCE_STATUS.ABSENT
     : ATTENDANCE_STATUS.REST;
   if (approvedLeave && !actualInAt && !actualOutAt) {

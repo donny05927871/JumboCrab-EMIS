@@ -54,23 +54,37 @@ export async function createDayOffRequest(
       return { success: false, error: "Employee record not found." };
     }
 
-    const workDate = startOfZonedDay(parsed.data.workDate!);
+    const sourceOffDate = startOfZonedDay(parsed.data.sourceOffDate!);
+    const targetWorkDate = startOfZonedDay(parsed.data.targetWorkDate!);
     const today = startOfZonedDay(new Date());
-    if (workDate.getTime() < today.getTime()) {
+    if (
+      sourceOffDate.getTime() < today.getTime() ||
+      targetWorkDate.getTime() < today.getTime()
+    ) {
       return {
         success: false,
-        error: "Day off requests can only be submitted for today or future dates.",
+        error: "Change day off requests can only be submitted for today or future dates.",
       };
     }
 
-    const previewResult = await buildDayOffPreview(employee.employeeId, workDate);
+    const previewResult = await buildDayOffPreview(
+      employee.employeeId,
+      sourceOffDate,
+      targetWorkDate,
+    );
     if ("error" in previewResult) {
       return { success: false, error: previewResult.error };
     }
-    if (!previewResult.preview.wouldChange) {
+    if (!previewResult.sourceIsDayOff) {
       return {
         success: false,
-        error: "You are already not scheduled to work on that date.",
+        error: "The source date must be an upcoming day off.",
+      };
+    }
+    if (!previewResult.targetSnapshot.shiftId || previewResult.targetIsDayOff) {
+      return {
+        success: false,
+        error: "The target date must be a scheduled workday.",
       };
     }
 
@@ -78,13 +92,16 @@ export async function createDayOffRequest(
       await Promise.all([
         getScheduleSwapBlockingIssue(
           employee.employeeId,
-          workDate,
+          targetWorkDate,
           previewResult.preview.employee.employeeName,
         ),
         db.dayOffRequest.findFirst({
           where: {
             employeeId: employee.employeeId,
-            workDate,
+            OR: [
+              { sourceOffDate },
+              { targetWorkDate },
+            ],
             status: {
               in: [DayOffRequestStatus.PENDING_MANAGER, DayOffRequestStatus.APPROVED],
             },
@@ -94,7 +111,7 @@ export async function createDayOffRequest(
         db.scheduleChangeRequest.findFirst({
           where: {
             employeeId: employee.employeeId,
-            workDate,
+            OR: [{ startDate: { lte: targetWorkDate }, endDate: { gte: targetWorkDate } }, { workDate: targetWorkDate }],
             status: {
               in: [
                 ScheduleChangeRequestStatus.PENDING_MANAGER,
@@ -106,7 +123,7 @@ export async function createDayOffRequest(
         }),
         db.scheduleSwapRequest.findFirst({
           where: {
-            workDate,
+            workDate: targetWorkDate,
             status: {
               in: [
                 ScheduleSwapRequestStatus.PENDING_COWORKER,
@@ -150,14 +167,22 @@ export async function createDayOffRequest(
     const created = await db.dayOffRequest.create({
       data: {
         employeeId: employee.employeeId,
-        workDate,
-        currentShiftIdSnapshot: previewResult.currentSnapshot.shiftId,
-        currentShiftCodeSnapshot: previewResult.currentSnapshot.shiftCode,
-        currentShiftNameSnapshot: previewResult.currentSnapshot.shiftName,
-        currentStartMinutesSnapshot: previewResult.currentSnapshot.startMinutes,
-        currentEndMinutesSnapshot: previewResult.currentSnapshot.endMinutes,
+        workDate: targetWorkDate,
+        sourceOffDate,
+        targetWorkDate,
+        sourceShiftIdSnapshot: previewResult.sourceSnapshot.shiftId,
+        sourceShiftCodeSnapshot: previewResult.sourceSnapshot.shiftCode,
+        sourceShiftNameSnapshot: previewResult.sourceSnapshot.shiftName,
+        sourceStartMinutesSnapshot: previewResult.sourceSnapshot.startMinutes,
+        sourceEndMinutesSnapshot: previewResult.sourceSnapshot.endMinutes,
+        sourceSpansMidnightSnapshot: previewResult.sourceSnapshot.spansMidnight,
+        currentShiftIdSnapshot: previewResult.targetSnapshot.shiftId,
+        currentShiftCodeSnapshot: previewResult.targetSnapshot.shiftCode,
+        currentShiftNameSnapshot: previewResult.targetSnapshot.shiftName,
+        currentStartMinutesSnapshot: previewResult.targetSnapshot.startMinutes,
+        currentEndMinutesSnapshot: previewResult.targetSnapshot.endMinutes,
         currentSpansMidnightSnapshot:
-          previewResult.currentSnapshot.spansMidnight,
+          previewResult.targetSnapshot.spansMidnight,
         reason: parsed.data.reason ?? null,
         status: DayOffRequestStatus.PENDING_MANAGER,
       },

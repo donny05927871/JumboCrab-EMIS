@@ -6,9 +6,9 @@ export default function AttendancePatternsPage() {
   return (
     <div className="space-y-6 px-4 py-6 sm:px-6 lg:px-8">
       <div>
-        <h1 className="text-2xl font-semibold">Weekly Patterns</h1>
+        <h1 className="text-2xl font-semibold">Weekly Schedule Planner</h1>
         <p className="text-sm text-muted-foreground">
-          Manage weekly shift patterns and assignments.
+          Build weekly employee schedules, compare with last week, and save only changed employees.
         </p>
       </div>
       <ScheduleBoard mode="patterns" />

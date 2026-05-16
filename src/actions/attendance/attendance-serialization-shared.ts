@@ -25,6 +25,7 @@ export type AttendanceRecord = Attendance & {
   expectedShift?: {
     id: number;
     name: string | null;
+    isDayOff?: boolean | null;
     startMinutes: number;
     endMinutes: number;
     breakStartMinutes: number | null;

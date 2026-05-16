@@ -32,50 +32,24 @@ const dateField = z
     return Number.isNaN(parsed.getTime()) ? null : parsed;
   });
 
-const dateArrayField = z
-  .array(dateField)
-  .optional()
-  .transform((value) =>
-    (value ?? []).filter(
-      (item): item is Date => item instanceof Date && !Number.isNaN(item.getTime()),
-    ),
-  );
+export const cashAdvanceRequestSchema = z.object({
+  amount: moneyField.refine(
+    (value) => typeof value === "number" && value > 0,
+    "Cash advance amount is required",
+  ),
+  preferredStartDate: dateField.optional(),
+  reason: optionalTrimmedString,
+}).superRefine((value, ctx) => {
+  if (!value.preferredStartDate) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["preferredStartDate"],
+      message: "Preferred bimonthly date is required",
+    });
+  }
+});
 
-export const cashAdvanceRequestSchema = z
-  .object({
-    amount: moneyField.refine(
-      (value) => typeof value === "number" && value > 0,
-      "Cash advance amount is required",
-    ),
-    repaymentPerPayroll: moneyField.refine(
-      (value) => typeof value === "number" && value > 0,
-      "Repayment per payroll is required",
-    ),
-    preferredStartDate: dateField,
-    reason: optionalTrimmedString,
-  })
-  .superRefine((value, ctx) => {
-    if (!value.preferredStartDate) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["preferredStartDate"],
-        message: "Preferred start date is required",
-      });
-    }
-    if (
-      typeof value.amount === "number" &&
-      typeof value.repaymentPerPayroll === "number" &&
-      value.repaymentPerPayroll > value.amount
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["repaymentPerPayroll"],
-        message: "Repayment per payroll cannot exceed the requested amount",
-      });
-    }
-  });
-
-export const cashAdvanceReviewSchema = z
+export const requestReviewSchema = z
   .object({
     id: z.string().trim().min(1, "Request is required"),
     decision: z.enum(["APPROVED", "REJECTED"]),
@@ -91,9 +65,72 @@ export const cashAdvanceReviewSchema = z
     }
   });
 
+export const cashAdvanceReviewSchema = requestReviewSchema
+  .safeExtend({
+    approvedAmount: moneyField.optional(),
+    deductionMode: z
+      .enum(["FULL_NEXT_PAYROLL", "INSTALLMENTS"])
+      .optional(),
+    approvedRepaymentPerPayroll: moneyField.optional(),
+    approvedEffectiveFrom: dateField.optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.decision === "APPROVED") {
+      if (!(typeof value.approvedAmount === "number" && value.approvedAmount > 0)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["approvedAmount"],
+          message: "Approved amount is required",
+        });
+      }
+
+      if (!value.deductionMode) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["deductionMode"],
+          message: "Deduction mode is required",
+        });
+      }
+
+      if (!value.approvedEffectiveFrom) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["approvedEffectiveFrom"],
+          message: "Effective date is required",
+        });
+      }
+
+      if (value.deductionMode === "INSTALLMENTS") {
+        if (
+          !(
+            typeof value.approvedRepaymentPerPayroll === "number" &&
+            value.approvedRepaymentPerPayroll > 0
+          )
+        ) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["approvedRepaymentPerPayroll"],
+            message: "Repayment per payroll is required for installments",
+          });
+        }
+        if (
+          typeof value.approvedAmount === "number" &&
+          typeof value.approvedRepaymentPerPayroll === "number" &&
+          value.approvedRepaymentPerPayroll > value.approvedAmount
+        ) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["approvedRepaymentPerPayroll"],
+            message: "Repayment per payroll cannot exceed the approved amount",
+          });
+        }
+      }
+    }
+  });
+
 export const leaveRequestSchema = z
   .object({
-    leaveType: z.enum(["VACATION", "SICK", "PERSONAL", "EMERGENCY", "UNPAID"]),
+    leaveType: z.enum(["SICK", "SIL", "UNPAID"]),
     startDate: dateField,
     endDate: dateField,
     reason: optionalTrimmedString,
@@ -122,28 +159,46 @@ export const leaveRequestSchema = z
     }
   });
 
-export const leaveReviewSchema = cashAdvanceReviewSchema.safeExtend({
-  paidDates: dateArrayField,
-});
+export const leaveReviewSchema = requestReviewSchema;
 
 export const dayOffRequestSchema = z
   .object({
-    workDate: dateField,
+    sourceOffDate: dateField,
+    targetWorkDate: dateField,
     reason: optionalTrimmedString,
   })
   .superRefine((value, ctx) => {
-    if (!value.workDate) {
+    if (!value.sourceOffDate) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ["workDate"],
-        message: "Day off date is required",
+        path: ["sourceOffDate"],
+        message: "Current day off date is required",
+      });
+    }
+    if (!value.targetWorkDate) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["targetWorkDate"],
+        message: "Target work date is required",
+      });
+    }
+    if (
+      value.sourceOffDate &&
+      value.targetWorkDate &&
+      value.sourceOffDate.getTime() === value.targetWorkDate.getTime()
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["targetWorkDate"],
+        message: "Target work date must be different from your current day off",
       });
     }
   });
 
 export const scheduleChangeRequestSchema = z
   .object({
-    workDate: dateField,
+    startDate: dateField,
+    endDate: dateField,
     requestedShiftId: numberField.refine(
       (value) => typeof value === "number" && Number.isInteger(value) && value > 0,
       "Requested shift is required",
@@ -151,11 +206,25 @@ export const scheduleChangeRequestSchema = z
     reason: optionalTrimmedString,
   })
   .superRefine((value, ctx) => {
-    if (!value.workDate) {
+    if (!value.startDate) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ["workDate"],
-        message: "Work date is required",
+        path: ["startDate"],
+        message: "Start date is required",
+      });
+    }
+    if (!value.endDate) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["endDate"],
+        message: "End date is required",
+      });
+    }
+    if (value.startDate && value.endDate && value.endDate < value.startDate) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["endDate"],
+        message: "End date cannot be earlier than the start date",
       });
     }
   });
@@ -192,10 +261,11 @@ export const scheduleSwapCoworkerReviewSchema = z
     }
   });
 
-export const scheduleSwapManagerReviewSchema = cashAdvanceReviewSchema;
+export const scheduleSwapManagerReviewSchema = requestReviewSchema;
 
 export type CashAdvanceRequestInput = z.infer<typeof cashAdvanceRequestSchema>;
 export type CashAdvanceReviewInput = z.infer<typeof cashAdvanceReviewSchema>;
+export type RequestReviewInput = z.infer<typeof requestReviewSchema>;
 export type LeaveRequestInput = z.infer<typeof leaveRequestSchema>;
 export type LeaveReviewInput = z.infer<typeof leaveReviewSchema>;
 export type DayOffRequestInput = z.infer<typeof dayOffRequestSchema>;

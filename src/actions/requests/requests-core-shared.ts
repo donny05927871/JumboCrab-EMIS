@@ -27,8 +27,8 @@ const RELATED_LAYOUT_PATHS = [
 ] as const;
 
 export const CASH_ADVANCE_DEDUCTION_CODE = "CASH_ADVANCE";
-export const PAID_LEAVE_ALLOWANCE_PER_YEAR = 10;
-export const PAID_SICK_LEAVE_ALLOWANCE_PER_YEAR = 10;
+export const PAID_LEAVE_ALLOWANCE_PER_YEAR = 5;
+export const PAID_SICK_LEAVE_ALLOWANCE_PER_YEAR = 5;
 export const DAY_MS = 24 * 60 * 60 * 1000;
 
 export const revalidateRequestLayouts = () => {
@@ -83,6 +83,217 @@ export const reviewedBySelect = {
   username: true,
 } as const;
 
+let scheduleChangeRangeColumnsPromise: Promise<boolean> | null = null;
+let cashAdvanceApprovalColumnsPromise: Promise<boolean> | null = null;
+let dayOffExtendedColumnsPromise: Promise<boolean> | null = null;
+
+export const hasScheduleChangeRangeColumns = async () => {
+  if (!scheduleChangeRangeColumnsPromise) {
+    scheduleChangeRangeColumnsPromise = (async () => {
+      try {
+        const rows = await db.$queryRaw<Array<{ column_name: string }>>`
+          SELECT column_name
+          FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'ScheduleChangeRequest'
+            AND column_name IN ('startDate', 'endDate')
+        `;
+
+        const names = new Set(rows.map((row) => row.column_name));
+        return names.has("startDate") && names.has("endDate");
+      } catch (error) {
+        console.error("Error checking ScheduleChangeRequest columns:", error);
+        return false;
+      }
+    })();
+  }
+
+  return scheduleChangeRangeColumnsPromise;
+};
+
+export const buildScheduleChangeRequestSelect = (
+  includeRangeColumns: boolean,
+) =>
+  ({
+    id: true,
+    employeeId: true,
+    workDate: true,
+    ...(includeRangeColumns ? { startDate: true, endDate: true } : {}),
+    currentShiftIdSnapshot: true,
+    currentShiftCodeSnapshot: true,
+    currentShiftNameSnapshot: true,
+    currentStartMinutesSnapshot: true,
+    currentEndMinutesSnapshot: true,
+    currentSpansMidnightSnapshot: true,
+    requestedShiftId: true,
+    requestedShiftCodeSnapshot: true,
+    requestedShiftNameSnapshot: true,
+    requestedStartMinutesSnapshot: true,
+    requestedEndMinutesSnapshot: true,
+    requestedSpansMidnightSnapshot: true,
+    reason: true,
+    status: true,
+    managerRemarks: true,
+    reviewedAt: true,
+    submittedAt: true,
+    createdAt: true,
+    updatedAt: true,
+    employee: { select: employeeRequestSelect },
+    reviewedBy: { select: reviewedBySelect },
+  }) satisfies Prisma.ScheduleChangeRequestSelect;
+
+export const hasCashAdvanceApprovalColumns = async () => {
+  if (!cashAdvanceApprovalColumnsPromise) {
+    cashAdvanceApprovalColumnsPromise = (async () => {
+      try {
+        const rows = await db.$queryRaw<Array<{ column_name: string }>>`
+          SELECT column_name
+          FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'CashAdvanceRequest'
+            AND column_name IN (
+              'approvedAmount',
+              'approvedDeductionMode',
+              'approvedRepaymentPerPayroll',
+              'approvedEffectiveFrom'
+            )
+        `;
+
+        const names = new Set(rows.map((row) => row.column_name));
+        return (
+          names.has("approvedAmount") &&
+          names.has("approvedDeductionMode") &&
+          names.has("approvedRepaymentPerPayroll") &&
+          names.has("approvedEffectiveFrom")
+        );
+      } catch (error) {
+        console.error("Error checking CashAdvanceRequest columns:", error);
+        return false;
+      }
+    })();
+  }
+
+  return cashAdvanceApprovalColumnsPromise;
+};
+
+export const buildCashAdvanceRequestSelect = (
+  includeApprovalColumns: boolean,
+  includeDeductionAssignment = true,
+) =>
+  ({
+    id: true,
+    employeeId: true,
+    amount: true,
+    repaymentPerPayroll: true,
+    preferredStartDate: true,
+    ...(includeApprovalColumns
+      ? {
+          approvedAmount: true,
+          approvedDeductionMode: true,
+          approvedRepaymentPerPayroll: true,
+          approvedEffectiveFrom: true,
+        }
+      : {}),
+    reason: true,
+    status: true,
+    managerRemarks: true,
+    submittedAt: true,
+    reviewedAt: true,
+    deductionAssignmentId: true,
+    createdAt: true,
+    updatedAt: true,
+    employee: { select: employeeRequestSelect },
+    reviewedBy: { select: reviewedBySelect },
+    ...(includeDeductionAssignment
+      ? {
+          deductionAssignment: {
+            select: {
+              id: true,
+              status: true,
+              effectiveFrom: true,
+              remainingBalance: true,
+            },
+          },
+        }
+      : {}),
+  }) satisfies Prisma.CashAdvanceRequestSelect;
+
+export const hasDayOffExtendedColumns = async () => {
+  if (!dayOffExtendedColumnsPromise) {
+    dayOffExtendedColumnsPromise = (async () => {
+      try {
+        const rows = await db.$queryRaw<Array<{ column_name: string }>>`
+          SELECT column_name
+          FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'DayOffRequest'
+            AND column_name IN (
+              'sourceOffDate',
+              'targetWorkDate',
+              'sourceShiftIdSnapshot',
+              'sourceShiftCodeSnapshot',
+              'sourceShiftNameSnapshot',
+              'sourceStartMinutesSnapshot',
+              'sourceEndMinutesSnapshot',
+              'sourceSpansMidnightSnapshot'
+            )
+        `;
+
+        const names = new Set(rows.map((row) => row.column_name));
+        return (
+          names.has("sourceOffDate") &&
+          names.has("targetWorkDate") &&
+          names.has("sourceShiftIdSnapshot") &&
+          names.has("sourceShiftCodeSnapshot") &&
+          names.has("sourceShiftNameSnapshot") &&
+          names.has("sourceStartMinutesSnapshot") &&
+          names.has("sourceEndMinutesSnapshot") &&
+          names.has("sourceSpansMidnightSnapshot")
+        );
+      } catch (error) {
+        console.error("Error checking DayOffRequest columns:", error);
+        return false;
+      }
+    })();
+  }
+
+  return dayOffExtendedColumnsPromise;
+};
+
+export const buildDayOffRequestSelect = (includeExtendedColumns: boolean) =>
+  ({
+    id: true,
+    employeeId: true,
+    workDate: true,
+    ...(includeExtendedColumns
+      ? {
+          sourceOffDate: true,
+          targetWorkDate: true,
+          sourceShiftIdSnapshot: true,
+          sourceShiftCodeSnapshot: true,
+          sourceShiftNameSnapshot: true,
+          sourceStartMinutesSnapshot: true,
+          sourceEndMinutesSnapshot: true,
+          sourceSpansMidnightSnapshot: true,
+        }
+      : {}),
+    currentShiftIdSnapshot: true,
+    currentShiftCodeSnapshot: true,
+    currentShiftNameSnapshot: true,
+    currentStartMinutesSnapshot: true,
+    currentEndMinutesSnapshot: true,
+    currentSpansMidnightSnapshot: true,
+    reason: true,
+    status: true,
+    managerRemarks: true,
+    reviewedAt: true,
+    submittedAt: true,
+    createdAt: true,
+    updatedAt: true,
+    employee: { select: employeeRequestSelect },
+    reviewedBy: { select: reviewedBySelect },
+  }) satisfies Prisma.DayOffRequestSelect;
+
 export const toEmployeeName = (employee: {
   firstName: string;
   lastName: string;
@@ -99,6 +310,7 @@ const leaveTypeToCurrentStatus = (
       return CURRENT_STATUS.VACATION;
     case LeaveRequestType.SICK:
       return CURRENT_STATUS.SICK_LEAVE;
+    case LeaveRequestType.SIL:
     case LeaveRequestType.PERSONAL:
     case LeaveRequestType.EMERGENCY:
     case LeaveRequestType.UNPAID:
@@ -169,6 +381,7 @@ export const getEmployeeForSession = async (userId: string) =>
       employeeCode: true,
       firstName: true,
       lastName: true,
+      startDate: true,
       isArchived: true,
       userId: true,
     },

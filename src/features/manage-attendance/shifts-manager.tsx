@@ -6,7 +6,7 @@ import {
   listShifts,
   updateShift,
 } from "@/actions/schedule/shifts-action";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { ColorPicker } from "@/components/ui/color-picker";
 import { RefreshCcw, Plus, Pencil, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -34,6 +35,8 @@ type ShiftRow = {
   id: number;
   code: string;
   name: string;
+  colorHex?: string | null;
+  isDayOff?: boolean;
   startMinutes: number;
   endMinutes: number;
   spansMidnight: boolean;
@@ -112,6 +115,8 @@ export function ShiftsManager() {
 
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
+  const [colorHex, setColorHex] = useState("");
+  const [isDayOff, setIsDayOff] = useState(false);
   const [startTime, setStartTime] = useState("09:00");
   const [endTime, setEndTime] = useState("18:00");
   const [breakStartTime, setBreakStartTime] = useState("");
@@ -132,23 +137,33 @@ export function ShiftsManager() {
     breakStartTime: "",
     breakEndTime: "",
     spansMidnight: false,
+    colorHex: "",
+    isDayOff: false,
     notes: "",
   });
+  const hasDayOffShift = useMemo(
+    () => rows.some((row) => row.isDayOff),
+    [rows],
+  );
 
-  const derivedCreate = computeDerived(
-    startTime,
-    endTime,
-    spansMidnight,
-    breakStartTime,
-    breakEndTime
-  );
-  const derivedEdit = computeDerived(
-    editForm.startTime,
-    editForm.endTime,
-    editForm.spansMidnight,
-    editForm.breakStartTime,
-    editForm.breakEndTime
-  );
+  const derivedCreate = isDayOff
+    ? { breakMinutes: 0, paidHours: 0, totalMinutes: 0 }
+    : computeDerived(
+        startTime,
+        endTime,
+        spansMidnight,
+        breakStartTime,
+        breakEndTime,
+      );
+  const derivedEdit = editForm.isDayOff
+    ? { breakMinutes: 0, paidHours: 0, totalMinutes: 0 }
+    : computeDerived(
+        editForm.startTime,
+        editForm.endTime,
+        editForm.spansMidnight,
+        editForm.breakStartTime,
+        editForm.breakEndTime,
+      );
 
   const load = async () => {
     try {
@@ -173,6 +188,8 @@ export function ShiftsManager() {
   const resetForm = () => {
     setCode("");
     setName("");
+    setColorHex("");
+    setIsDayOff(false);
     setStartTime("09:00");
     setEndTime("18:00");
     setBreakStartTime("");
@@ -183,7 +200,7 @@ export function ShiftsManager() {
   };
 
   const handleSave = async () => {
-    if (!code.trim() || !name.trim()) {
+    if (!isDayOff && (!code.trim() || !name.trim())) {
       setFormError("Code and name are required");
       return;
     }
@@ -193,6 +210,8 @@ export function ShiftsManager() {
       const payload = {
         code,
         name,
+        colorHex,
+        isDayOff,
         startTime,
         endTime,
         breakStartTime,
@@ -224,6 +243,8 @@ export function ShiftsManager() {
     setEditForm({
       code: row.code,
       name: row.name,
+      colorHex: row.colorHex ?? "",
+      isDayOff: Boolean(row.isDayOff),
       startTime: minutesToInput(row.startMinutes),
       endTime: minutesToInput(row.endMinutes),
       breakStartTime: minutesToInput(row.breakStartMinutes ?? null),
@@ -245,6 +266,8 @@ export function ShiftsManager() {
       breakStartTime: "",
       breakEndTime: "",
       spansMidnight: false,
+      colorHex: "",
+      isDayOff: false,
       notes: "",
     });
     setEditError(null);
@@ -256,7 +279,7 @@ export function ShiftsManager() {
       setEditError("No shift selected");
       return;
     }
-    if (!editForm.code.trim() || !editForm.name.trim()) {
+    if (!editForm.isDayOff && (!editForm.code.trim() || !editForm.name.trim())) {
       setEditError("Code and name are required");
       return;
     }
@@ -289,17 +312,17 @@ export function ShiftsManager() {
     try {
       const result = await deleteShiftAction(id);
       if (!result.success) {
-        throw new Error(result.error || "Failed to delete shift");
+        throw new Error(result.error || "Failed to archive shift");
       }
       if (editingId === id) resetEdit();
       await load();
-      toast.success("Shift deleted successfully.");
+      toast.success("Shift archived successfully.");
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : "Failed to delete shift";
+        err instanceof Error ? err.message : "Failed to archive shift";
       setError(message);
       setEditError(message);
-      toast.error("Failed to delete shift.", {
+      toast.error("Failed to archive shift.", {
         description: message,
       });
     }
@@ -341,7 +364,9 @@ export function ShiftsManager() {
                     <TableHead className="w-[20%]">Time</TableHead>
                     <TableHead className="w-[18%]">Break window</TableHead>
                     <TableHead className="w-[12%]">Paid hours</TableHead>
+                    <TableHead className="w-[12%]">Type</TableHead>
                     <TableHead className="w-[18%]">Notes</TableHead>
+                    <TableHead className="w-[8%] text-right">Color</TableHead>
                     <TableHead className="w-[14%] text-right">
                       Actions
                     </TableHead>
@@ -380,8 +405,25 @@ export function ShiftsManager() {
                       <TableCell className="text-sm text-muted-foreground">
                         {row.paidHoursPerDay} hrs
                       </TableCell>
+                      <TableCell>
+                        {row.isDayOff ? (
+                          <Badge>Day Off</Badge>
+                        ) : (
+                          <Badge variant="outline">Work</Badge>
+                        )}
+                      </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
                         {row.notes || "—"}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {row.colorHex ? (
+                          <div
+                            className="ml-auto h-6 w-10 rounded border"
+                            style={{ backgroundColor: row.colorHex }}
+                          />
+                        ) : (
+                          "—"
+                        )}
                       </TableCell>
                       <TableCell className="text-right text-sm">
                         <div className="flex justify-end gap-2">
@@ -399,7 +441,7 @@ export function ShiftsManager() {
                             className="gap-2 text-destructive"
                             onClick={async () => handleDeleteShift(row.id)}
                           >
-                            <Trash2 className="h-4 w-4" /> Delete
+                            <Trash2 className="h-4 w-4" /> Archive
                           </Button>
                         </div>
                       </TableCell>
@@ -416,7 +458,7 @@ export function ShiftsManager() {
         <CardHeader>
           <CardTitle className="text-lg">Create Shift</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Define a reusable shift.
+            Define reusable shift, optional color, or singleton Day Off shift.
           </p>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -438,10 +480,31 @@ export function ShiftsManager() {
               />
             </div>
             <div className="space-y-2">
+              <label className="text-sm font-medium">Color</label>
+              <ColorPicker value={colorHex} onChange={setColorHex} />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Type</label>
+              <div className="flex items-center gap-2">
+                <input
+                  id="create-is-day-off-shift"
+                  type="checkbox"
+                  checked={isDayOff}
+                  disabled={hasDayOffShift}
+                  onChange={(e) => setIsDayOff(e.target.checked)}
+                  className="h-4 w-4"
+                />
+                <label htmlFor="create-is-day-off-shift" className="text-sm text-muted-foreground">
+                  Mark as singleton Day Off shift
+                </label>
+              </div>
+            </div>
+            <div className="space-y-2">
               <label className="text-sm font-medium">Start time</label>
               <Input
                 type="time"
                 value={startTime}
+                disabled={isDayOff}
                 onChange={(e) => setStartTime(e.target.value)}
               />
             </div>
@@ -450,6 +513,7 @@ export function ShiftsManager() {
               <Input
                 type="time"
                 value={endTime}
+                disabled={isDayOff}
                 onChange={(e) => setEndTime(e.target.value)}
               />
             </div>
@@ -458,6 +522,7 @@ export function ShiftsManager() {
               <Input
                 type="time"
                 value={breakStartTime}
+                disabled={isDayOff}
                 onChange={(e) => setBreakStartTime(e.target.value)}
                 placeholder="14:00"
               />
@@ -467,6 +532,7 @@ export function ShiftsManager() {
               <Input
                 type="time"
                 value={breakEndTime}
+                disabled={isDayOff}
                 onChange={(e) => setBreakEndTime(e.target.value)}
                 placeholder="15:00"
               />
@@ -499,6 +565,7 @@ export function ShiftsManager() {
                   id="spans-midnight-shift"
                   type="checkbox"
                   checked={spansMidnight}
+                  disabled={isDayOff}
                   onChange={(e) => setSpansMidnight(e.target.checked)}
                   className="h-4 w-4"
                 />
@@ -512,6 +579,11 @@ export function ShiftsManager() {
             </div>
           </div>
           {formError && <p className="text-sm text-destructive">{formError}</p>}
+          <p className="text-xs text-muted-foreground">
+            {hasDayOffShift
+              ? "Day Off shift already exists. Edit/archive that one if you need to change it."
+              : "No Day Off shift yet. Use checkbox above to create one."}
+          </p>
           <div className="flex justify-end gap-2">
             <Button onClick={handleSave} disabled={saving} className="gap-2">
               <Plus className="h-4 w-4" />
@@ -554,10 +626,45 @@ export function ShiftsManager() {
               />
             </div>
             <div className="space-y-2">
+              <label className="text-sm font-medium">Color</label>
+              <ColorPicker
+                value={editForm.colorHex}
+                onChange={(value) =>
+                  setEditForm((f) => ({ ...f, colorHex: value }))
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Type</label>
+              <div className="flex items-center gap-2">
+                <input
+                  id="edit-is-day-off-shift"
+                  type="checkbox"
+                  checked={editForm.isDayOff}
+                  onChange={(e) =>
+                    setEditForm((f) => ({
+                      ...f,
+                      isDayOff: e.target.checked,
+                      startTime: e.target.checked ? "00:00" : f.startTime,
+                      endTime: e.target.checked ? "00:00" : f.endTime,
+                      breakStartTime: e.target.checked ? "" : f.breakStartTime,
+                      breakEndTime: e.target.checked ? "" : f.breakEndTime,
+                      spansMidnight: e.target.checked ? false : f.spansMidnight,
+                    }))
+                  }
+                  className="h-4 w-4"
+                />
+                <label htmlFor="edit-is-day-off-shift" className="text-sm text-muted-foreground">
+                  Mark as singleton Day Off shift
+                </label>
+              </div>
+            </div>
+            <div className="space-y-2">
               <label className="text-sm font-medium">Start time</label>
               <Input
                 type="time"
                 value={editForm.startTime}
+                disabled={editForm.isDayOff}
                 onChange={(e) =>
                   setEditForm((f) => ({ ...f, startTime: e.target.value }))
                 }
@@ -568,6 +675,7 @@ export function ShiftsManager() {
               <Input
                 type="time"
                 value={editForm.endTime}
+                disabled={editForm.isDayOff}
                 onChange={(e) =>
                   setEditForm((f) => ({ ...f, endTime: e.target.value }))
                 }
@@ -578,6 +686,7 @@ export function ShiftsManager() {
               <Input
                 type="time"
                 value={editForm.breakStartTime}
+                disabled={editForm.isDayOff}
                 onChange={(e) =>
                   setEditForm((f) => ({ ...f, breakStartTime: e.target.value }))
                 }
@@ -589,6 +698,7 @@ export function ShiftsManager() {
               <Input
                 type="time"
                 value={editForm.breakEndTime}
+                disabled={editForm.isDayOff}
                 onChange={(e) =>
                   setEditForm((f) => ({ ...f, breakEndTime: e.target.value }))
                 }
@@ -625,6 +735,7 @@ export function ShiftsManager() {
                   id="edit-spans-midnight"
                   type="checkbox"
                   checked={editForm.spansMidnight}
+                  disabled={editForm.isDayOff}
                   onChange={(e) =>
                     setEditForm((f) => ({
                       ...f,
@@ -654,7 +765,7 @@ export function ShiftsManager() {
               }}
             >
               <Trash2 className="h-4 w-4" />
-              Delete
+              Archive
             </Button>
             <div className="flex gap-2 sm:justify-end">
               <Button variant="ghost" onClick={resetEdit} disabled={editSaving}>

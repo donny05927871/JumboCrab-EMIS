@@ -70,6 +70,15 @@ const formatShiftSummary = (shift: ShiftLite | null | undefined) =>
       )})`
     : "Rest day";
 
+const getSelectStyle = (shift: ShiftLite | null | undefined) =>
+  shift?.colorHex
+    ? {
+        borderColor: shift.colorHex,
+        backgroundColor: `${shift.colorHex}14`,
+        boxShadow: `inset 0 0 0 1px ${shift.colorHex}22`,
+      }
+    : undefined;
+
 export function OverridesSection({
   showOverrideForm,
   showOverrideTables,
@@ -102,6 +111,10 @@ export function OverridesSection({
   onStartEditOverride,
   onDeleteOverride,
 }: OverridesSectionProps) {
+  const selectedShift =
+    overrideShiftId && !Number.isNaN(Number(overrideShiftId))
+      ? shifts.find((shift) => shift.id === Number(overrideShiftId)) ?? null
+      : null;
   return (
     <>
       {showOverrideForm && (
@@ -133,12 +146,24 @@ export function OverridesSection({
                 <label className="text-sm font-medium">Shift</label>
                 <select
                   className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  style={getSelectStyle(selectedShift)}
                   value={overrideShiftId}
                   onChange={(e) => onOverrideShiftChange(e.target.value)}
                 >
                   <option value="">Rest day (no shift)</option>
                   {shifts.map((s) => (
-                    <option key={s.id} value={s.id}>
+                    <option
+                      key={s.id}
+                      value={s.id}
+                      style={
+                        s.colorHex
+                          ? {
+                              color: s.colorHex,
+                              backgroundColor: `${s.colorHex}14`,
+                            }
+                          : undefined
+                      }
+                    >
                       {s.name} ({formatMinutes(s.startMinutes)} -{" "}
                       {formatMinutes(s.endMinutes)})
                     </option>
@@ -462,12 +487,24 @@ export function OverridesSection({
               <label className="text-sm font-medium">Shift</label>
               <select
                 className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                style={getSelectStyle(selectedShift)}
                 value={overrideShiftId}
                 onChange={(e) => onOverrideShiftChange(e.target.value)}
               >
                 <option value="">Rest day (no shift)</option>
                 {shifts.map((s) => (
-                  <option key={s.id} value={s.id}>
+                  <option
+                    key={s.id}
+                    value={s.id}
+                    style={
+                      s.colorHex
+                        ? {
+                            color: s.colorHex,
+                            backgroundColor: `${s.colorHex}14`,
+                          }
+                        : undefined
+                    }
+                  >
                     {s.name} ({formatMinutes(s.startMinutes)} -{" "}
                     {formatMinutes(s.endMinutes)})
                   </option>

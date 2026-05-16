@@ -203,7 +203,7 @@ const NavSidebar = ({ userRole }: NavSidebarProps) => {
           roles: ["admin", "generalManager", "manager", "supervisor"],
         },
         {
-          label: "Weekly Patterns",
+          label: "Weekly Schedule",
           path: "/patterns",
           roles: ["admin", "generalManager", "manager", "supervisor"],
         },

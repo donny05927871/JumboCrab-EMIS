@@ -9,6 +9,9 @@ import { formatShiftSnapshotLabel } from "./requests-schedule-shared";
 import type {
   CashAdvanceRequestRow,
   DayOffRequestRow,
+  EmployeeLeaveCreditLedgerRow,
+  LeaveCreditPolicyRow,
+  LeaveCreditResetRunRow,
   LeaveRequestRow,
   ScheduleChangeRequestRow,
   ScheduleSwapRequestRow,
@@ -38,6 +41,21 @@ type CashAdvanceRequestRecord = Prisma.CashAdvanceRequestGetPayload<{
   };
 }>;
 
+export type CashAdvanceRequestRecordCompat = Omit<
+  CashAdvanceRequestRecord,
+  | "approvedAmount"
+  | "approvedDeductionMode"
+  | "approvedRepaymentPerPayroll"
+  | "approvedEffectiveFrom"
+  | "reviewedByUserId"
+> & {
+  approvedAmount?: Prisma.Decimal | number | null;
+  approvedDeductionMode?: CashAdvanceRequestRecord["approvedDeductionMode"] | null;
+  approvedRepaymentPerPayroll?: Prisma.Decimal | number | null;
+  approvedEffectiveFrom?: Date | null;
+  reviewedByUserId?: string | null;
+};
+
 type LeaveRequestRecord = Prisma.LeaveRequestGetPayload<{
   include: {
     employee: { select: typeof employeeRequestSelect };
@@ -45,7 +63,6 @@ type LeaveRequestRecord = Prisma.LeaveRequestGetPayload<{
     attendances: {
       select: {
         workDate: true;
-        isPaidLeave: true;
       };
     };
   };
@@ -58,12 +75,44 @@ type DayOffRequestRecord = Prisma.DayOffRequestGetPayload<{
   };
 }>;
 
+export type DayOffRequestRecordCompat = Omit<
+  DayOffRequestRecord,
+  | "sourceOffDate"
+  | "targetWorkDate"
+  | "sourceShiftIdSnapshot"
+  | "sourceShiftCodeSnapshot"
+  | "sourceShiftNameSnapshot"
+  | "sourceStartMinutesSnapshot"
+  | "sourceEndMinutesSnapshot"
+  | "sourceSpansMidnightSnapshot"
+  | "reviewedByUserId"
+> & {
+  sourceOffDate?: Date | null;
+  targetWorkDate?: Date | null;
+  sourceShiftIdSnapshot?: number | null;
+  sourceShiftCodeSnapshot?: string | null;
+  sourceShiftNameSnapshot?: string | null;
+  sourceStartMinutesSnapshot?: number | null;
+  sourceEndMinutesSnapshot?: number | null;
+  sourceSpansMidnightSnapshot?: boolean | null;
+  reviewedByUserId?: string | null;
+};
+
 type ScheduleChangeRequestRecord = Prisma.ScheduleChangeRequestGetPayload<{
   include: {
     employee: { select: typeof employeeRequestSelect };
     reviewedBy: { select: typeof reviewedBySelect };
   };
 }>;
+
+export type ScheduleChangeRequestRecordCompat = Omit<
+  ScheduleChangeRequestRecord,
+  "startDate" | "endDate" | "reviewedByUserId"
+> & {
+  startDate?: Date | null;
+  endDate?: Date | null;
+  reviewedByUserId?: string | null;
+};
 
 type ScheduleSwapRequestRecord = Prisma.ScheduleSwapRequestGetPayload<{
   include: {
@@ -74,7 +123,7 @@ type ScheduleSwapRequestRecord = Prisma.ScheduleSwapRequestGetPayload<{
 }>;
 
 export const serializeCashAdvanceRequest = (
-  row: CashAdvanceRequestRecord,
+  row: CashAdvanceRequestRecordCompat,
 ): CashAdvanceRequestRow => ({
   id: row.id,
   employeeId: row.employeeId,
@@ -83,6 +132,10 @@ export const serializeCashAdvanceRequest = (
   amount: toNumber(row.amount) ?? 0,
   repaymentPerPayroll: toNumber(row.repaymentPerPayroll) ?? 0,
   preferredStartDate: row.preferredStartDate.toISOString(),
+  approvedAmount: toNumber(row.approvedAmount),
+  approvedDeductionMode: row.approvedDeductionMode ?? null,
+  approvedRepaymentPerPayroll: toNumber(row.approvedRepaymentPerPayroll),
+  approvedEffectiveFrom: toIsoString(row.approvedEffectiveFrom),
   reason: row.reason ?? null,
   status: row.status,
   managerRemarks: row.managerRemarks ?? null,
@@ -104,26 +157,16 @@ export const serializeCashAdvanceRequest = (
 export const serializeLeaveRequest = (
   row: LeaveRequestRecord,
 ): LeaveRequestRow => {
-  const sortedAttendances = [...row.attendances].sort(
-    (left, right) => left.workDate.getTime() - right.workDate.getTime(),
-  );
-  const paidDateList = sortedAttendances
-    .filter((attendance) => attendance.isPaidLeave)
-    .map((attendance) => attendance.workDate.toISOString());
-  const unpaidDateList = sortedAttendances
-    .filter((attendance) => !attendance.isPaidLeave)
-    .map((attendance) => attendance.workDate.toISOString());
+  const totalDays = enumerateZonedDaysInclusive(row.startDate, row.endDate).length;
 
   return {
-    paidDaysCount: paidDateList.length,
-    unpaidDaysCount: unpaidDateList.length,
-    paidDateList,
-    unpaidDateList,
     id: row.id,
     employeeId: row.employeeId,
     employeeCode: row.employee.employeeCode,
     employeeName: toEmployeeName(row.employee),
     leaveType: row.leaveType,
+    leaveCreditType:
+      row.leaveType === "SICK" ? "SICK" : row.leaveType === "SIL" ? "SIL" : null,
     startDate: row.startDate.toISOString(),
     endDate: row.endDate.toISOString(),
     reason: row.reason ?? null,
@@ -134,19 +177,48 @@ export const serializeLeaveRequest = (
     submittedAt: row.submittedAt.toISOString(),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
-    totalDays: enumerateZonedDaysInclusive(row.startDate, row.endDate).length,
+    totalDays,
+    creditDaysUsed: row.leaveType === "UNPAID" ? 0 : totalDays,
+    paidDaysCount: row.leaveType === "UNPAID" ? 0 : totalDays,
+    unpaidDaysCount: row.leaveType === "UNPAID" ? totalDays : 0,
+    paidDateList:
+      row.leaveType === "UNPAID"
+        ? []
+        : enumerateZonedDaysInclusive(row.startDate, row.endDate).map((day) =>
+            day.toISOString(),
+          ),
+    unpaidDateList:
+      row.leaveType === "UNPAID"
+        ? enumerateZonedDaysInclusive(row.startDate, row.endDate).map((day) =>
+            day.toISOString(),
+          )
+        : [],
   };
 };
 
 export const serializeDayOffRequest = (
-  row: DayOffRequestRecord,
+  row: DayOffRequestRecordCompat,
 ): DayOffRequestRow => ({
   id: row.id,
   employeeId: row.employeeId,
   employeeCode: row.employee.employeeCode,
   employeeName: toEmployeeName(row.employee),
-  workDate: row.workDate.toISOString(),
+  workDate: (row.targetWorkDate ?? row.workDate).toISOString(),
+  sourceOffDate: (row.sourceOffDate ?? row.workDate).toISOString(),
+  targetWorkDate: (row.targetWorkDate ?? row.workDate).toISOString(),
   currentShiftLabel: formatShiftSnapshotLabel({
+    shiftCode: row.currentShiftCodeSnapshot,
+    shiftName: row.currentShiftNameSnapshot,
+    startMinutes: row.currentStartMinutesSnapshot,
+    endMinutes: row.currentEndMinutesSnapshot,
+  }),
+  sourceShiftLabel: formatShiftSnapshotLabel({
+    shiftCode: row.sourceShiftCodeSnapshot,
+    shiftName: row.sourceShiftNameSnapshot,
+    startMinutes: row.sourceStartMinutesSnapshot,
+    endMinutes: row.sourceEndMinutesSnapshot,
+  }),
+  targetShiftLabel: formatShiftSnapshotLabel({
     shiftCode: row.currentShiftCodeSnapshot,
     shiftName: row.currentShiftNameSnapshot,
     startMinutes: row.currentStartMinutesSnapshot,
@@ -163,13 +235,19 @@ export const serializeDayOffRequest = (
 });
 
 export const serializeScheduleChangeRequest = (
-  row: ScheduleChangeRequestRecord,
+  row: ScheduleChangeRequestRecordCompat,
 ): ScheduleChangeRequestRow => ({
   id: row.id,
   employeeId: row.employeeId,
   employeeCode: row.employee.employeeCode,
   employeeName: toEmployeeName(row.employee),
-  workDate: row.workDate.toISOString(),
+  workDate: (row.startDate ?? row.workDate).toISOString(),
+  startDate: (row.startDate ?? row.workDate).toISOString(),
+  endDate: (row.endDate ?? row.workDate).toISOString(),
+  totalDays: enumerateZonedDaysInclusive(
+    row.startDate ?? row.workDate,
+    row.endDate ?? row.workDate,
+  ).length,
   currentShiftLabel: formatShiftSnapshotLabel({
     shiftCode: row.currentShiftCodeSnapshot,
     shiftName: row.currentShiftNameSnapshot,
@@ -191,6 +269,89 @@ export const serializeScheduleChangeRequest = (
   submittedAt: row.submittedAt.toISOString(),
   createdAt: row.createdAt.toISOString(),
   updatedAt: row.updatedAt.toISOString(),
+});
+
+export const serializeLeaveCreditPolicy = (row: {
+  id: string;
+  leaveType: "SICK" | "SIL";
+  annualCredits: number;
+  resetMonth: number;
+  resetDay: number;
+  createdAt: Date;
+  updatedAt: Date;
+}): LeaveCreditPolicyRow => ({
+  id: row.id,
+  leaveType: row.leaveType,
+  annualCredits: row.annualCredits,
+  resetMonth: row.resetMonth,
+  resetDay: row.resetDay,
+  createdAt: row.createdAt.toISOString(),
+  updatedAt: row.updatedAt.toISOString(),
+});
+
+export const serializeLeaveCreditResetRun = (row: {
+  id: string;
+  policyId: string;
+  leaveType: "SICK" | "SIL";
+  cycleStartDate: Date;
+  cycleEndDate: Date;
+  effectiveDate: Date;
+  annualCredits: number;
+  employeeCount: number;
+  runType: "MANUAL" | "SCHEDULED";
+  notes: string | null;
+  initiatedByUserId: string | null;
+  createdAt: Date;
+}): LeaveCreditResetRunRow => ({
+  id: row.id,
+  policyId: row.policyId,
+  leaveType: row.leaveType,
+  cycleStartDate: row.cycleStartDate.toISOString(),
+  cycleEndDate: row.cycleEndDate.toISOString(),
+  effectiveDate: row.effectiveDate.toISOString(),
+  annualCredits: row.annualCredits,
+  employeeCount: row.employeeCount,
+  runType: row.runType,
+  notes: row.notes,
+  initiatedByUserId: row.initiatedByUserId,
+  createdAt: row.createdAt.toISOString(),
+});
+
+export const serializeEmployeeLeaveCreditLedger = (row: {
+  id: string;
+  employeeId: string;
+  leaveType: "SICK" | "SIL";
+  entryType: "GRANT" | "RESET" | "USAGE" | "ADJUSTMENT";
+  amount: number;
+  balanceBefore: number;
+  balanceAfter: number;
+  effectiveDate: Date;
+  cycleStartDate: Date;
+  notes: string | null;
+  leaveRequestId: string | null;
+  resetRunId: string | null;
+  createdAt: Date;
+  employee: {
+    employeeCode: string;
+    firstName: string;
+    lastName: string;
+  };
+}): EmployeeLeaveCreditLedgerRow => ({
+  id: row.id,
+  employeeId: row.employeeId,
+  employeeCode: row.employee.employeeCode,
+  employeeName: toEmployeeName(row.employee),
+  leaveType: row.leaveType,
+  entryType: row.entryType,
+  amount: row.amount,
+  balanceBefore: row.balanceBefore,
+  balanceAfter: row.balanceAfter,
+  effectiveDate: row.effectiveDate.toISOString(),
+  cycleStartDate: row.cycleStartDate.toISOString(),
+  notes: row.notes,
+  leaveRequestId: row.leaveRequestId,
+  resetRunId: row.resetRunId,
+  createdAt: row.createdAt.toISOString(),
 });
 
 export const serializeScheduleSwapRequest = (

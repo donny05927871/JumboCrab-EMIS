@@ -1,16 +1,9 @@
 "use server";
 
-import {
-  ATTENDANCE_STATUS,
-  LeaveRequestStatus,
-  LeaveRequestType,
-  Prisma,
-} from "@prisma/client";
+import { LeaveRequestStatus, Prisma } from "@prisma/client";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import {
-  PAID_LEAVE_ALLOWANCE_PER_YEAR,
-  PAID_SICK_LEAVE_ALLOWANCE_PER_YEAR,
   canCreateEmployeeRequests,
   canReviewRequests,
   employeeRequestSelect,
@@ -18,6 +11,10 @@ import {
   reviewedBySelect,
   serializeLeaveRequest,
 } from "./requests-shared";
+import {
+  ACTIVE_LEAVE_REQUEST_TYPES,
+  getEmployeeLeaveCredits,
+} from "./requests-leave-credit-shared";
 import type { EmployeeLeaveBalanceSummary, LeaveRequestRow } from "./types";
 
 export async function listLeaveRequests(input?: {
@@ -70,6 +67,7 @@ export async function listLeaveRequests(input?: {
     if (Array.isArray(input?.statuses) && input.statuses.length > 0) {
       where.status = { in: input.statuses };
     }
+    where.leaveType = { in: [...ACTIVE_LEAVE_REQUEST_TYPES] };
 
     const rows = await db.leaveRequest.findMany({
       where,
@@ -85,7 +83,6 @@ export async function listLeaveRequests(input?: {
         attendances: {
           select: {
             workDate: true,
-            isPaidLeave: true,
           },
         },
       },
@@ -145,55 +142,49 @@ export async function getEmployeeLeaveBalanceSummary(input?: {
       };
     }
 
-    const yearStart = new Date(`${year}-01-01T00:00:00+08:00`);
-    const nextYearStart = new Date(`${year + 1}-01-01T00:00:00+08:00`);
-
-    const paidLeaveAttendances = await db.attendance.findMany({
-      where: {
-        employeeId,
-        status: ATTENDANCE_STATUS.LEAVE,
-        isPaidLeave: true,
-        workDate: {
-          gte: yearStart,
-          lt: nextYearStart,
-        },
-      },
-      select: {
-        leaveRequest: {
-          select: {
-            leaveType: true,
-          },
-        },
-      },
+    const employee = await db.employee.findUnique({
+      where: { employeeId },
+      select: { employeeId: true, startDate: true, isArchived: true },
     });
+    if (!employee || employee.isArchived) {
+      return { success: false, error: "Employee record not found." };
+    }
 
-    let paidLeaveUsed = 0;
-    let paidSickLeaveUsed = 0;
-
-    paidLeaveAttendances.forEach((attendance) => {
-      if (attendance.leaveRequest?.leaveType === LeaveRequestType.SICK) {
-        paidSickLeaveUsed += 1;
-      } else {
-        paidLeaveUsed += 1;
-      }
+    const credits = await getEmployeeLeaveCredits({
+      employeeId: employee.employeeId,
+      employeeStartDate: employee.startDate,
+      referenceDate: new Date(`${year}-12-31T00:00:00+08:00`),
     });
 
     return {
       success: true,
       data: {
+        referenceDate: new Date(`${year}-12-31T00:00:00+08:00`).toISOString(),
+        sick: {
+          leaveType: credits.sick.leaveType,
+          annualCredits: credits.sick.annualCredits,
+          used: credits.sick.annualCredits - credits.sick.balance,
+          remaining: credits.sick.balance,
+          cycleStartDate: credits.sick.cycleStartDate.toISOString(),
+          resetMonth: credits.sick.resetMonth,
+          resetDay: credits.sick.resetDay,
+        },
+        sil: {
+          leaveType: credits.sil.leaveType,
+          annualCredits: credits.sil.annualCredits,
+          used: credits.sil.annualCredits - credits.sil.balance,
+          remaining: credits.sil.balance,
+          cycleStartDate: credits.sil.cycleStartDate.toISOString(),
+          resetMonth: credits.sil.resetMonth,
+          resetDay: credits.sil.resetDay,
+        },
         year,
-        paidLeaveAllowance: PAID_LEAVE_ALLOWANCE_PER_YEAR,
-        paidLeaveUsed,
-        paidLeaveRemaining: Math.max(
-          0,
-          PAID_LEAVE_ALLOWANCE_PER_YEAR - paidLeaveUsed,
-        ),
-        paidSickLeaveAllowance: PAID_SICK_LEAVE_ALLOWANCE_PER_YEAR,
-        paidSickLeaveUsed,
-        paidSickLeaveRemaining: Math.max(
-          0,
-          PAID_SICK_LEAVE_ALLOWANCE_PER_YEAR - paidSickLeaveUsed,
-        ),
+        paidLeaveAllowance: credits.sil.annualCredits,
+        paidLeaveUsed: credits.sil.annualCredits - credits.sil.balance,
+        paidLeaveRemaining: credits.sil.balance,
+        paidSickLeaveAllowance: credits.sick.annualCredits,
+        paidSickLeaveUsed: credits.sick.annualCredits - credits.sick.balance,
+        paidSickLeaveRemaining: credits.sick.balance,
       },
     };
   } catch (error) {

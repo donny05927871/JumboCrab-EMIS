@@ -7,12 +7,14 @@ import {
 } from "@prisma/client";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { getExpectedShiftForDate } from "@/lib/attendance";
 import { startOfZonedDay } from "@/lib/timezone";
 import { scheduleChangeRequestSchema } from "@/lib/validations/requests";
 import {
   buildScheduleChangePreview,
   canCreateEmployeeRequests,
   employeeRequestSelect,
+  enumerateZonedDaysInclusive,
   getEmployeeForSession,
   getScheduleSwapBlockingIssue,
   revalidateRequestLayouts,
@@ -58,9 +60,10 @@ export async function createScheduleChangeRequest(
       return { success: false, error: "Employee record not found." };
     }
 
-    const workDate = startOfZonedDay(parsed.data.workDate!);
+    const startDate = startOfZonedDay(parsed.data.startDate!);
+    const endDate = startOfZonedDay(parsed.data.endDate!);
     const today = startOfZonedDay(new Date());
-    if (workDate.getTime() < today.getTime()) {
+    if (startDate.getTime() < today.getTime()) {
       return {
         success: false,
         error: "Schedule changes can only be requested for today or future dates.",
@@ -70,31 +73,55 @@ export async function createScheduleChangeRequest(
     const previewResult = await buildScheduleChangePreview(
       employee.employeeId,
       parsed.data.requestedShiftId!,
-      workDate,
+      startDate,
+      endDate,
     );
 
     if ("error" in previewResult) {
       return { success: false, error: previewResult.error };
     }
-    if (!previewResult.preview.wouldChange) {
+    const requestDates = enumerateZonedDaysInclusive(startDate, endDate);
+    const firstExpected = await getExpectedShiftForDate(employee.employeeId, startDate);
+    if (!firstExpected.shift || firstExpected.shift.isDayOff) {
       return {
         success: false,
-        error:
-          "Your requested shift is already assigned on that date, so there is nothing to change.",
+        error: "The range must start on a scheduled workday.",
       };
+    }
+    for (const day of requestDates) {
+      const expected = day.getTime() === startDate.getTime()
+        ? firstExpected
+        : await getExpectedShiftForDate(employee.employeeId, day);
+      if (!expected.shift || expected.shift.isDayOff) {
+        return {
+          success: false,
+          error: "Every day in the selected range must be a scheduled workday.",
+        };
+      }
     }
 
     const [blockingIssue, duplicate, dayOffConflict, swapConflict] =
       await Promise.all([
         getScheduleSwapBlockingIssue(
           employee.employeeId,
-          workDate,
+          startDate,
           previewResult.preview.employee.employeeName,
         ),
         db.scheduleChangeRequest.findFirst({
           where: {
             employeeId: employee.employeeId,
-            workDate,
+            OR: [
+              {
+                startDate: { lte: endDate },
+                endDate: { gte: startDate },
+              },
+              {
+                workDate: {
+                  gte: startDate,
+                  lte: endDate,
+                },
+              },
+            ],
             status: {
               in: [
                 ScheduleChangeRequestStatus.PENDING_MANAGER,
@@ -107,7 +134,11 @@ export async function createScheduleChangeRequest(
         db.dayOffRequest.findFirst({
           where: {
             employeeId: employee.employeeId,
-            workDate,
+            OR: [
+              { targetWorkDate: { gte: startDate, lte: endDate } },
+              { sourceOffDate: { gte: startDate, lte: endDate } },
+              { workDate: { gte: startDate, lte: endDate } },
+            ],
             status: {
               in: [DayOffRequestStatus.PENDING_MANAGER, DayOffRequestStatus.APPROVED],
             },
@@ -116,7 +147,10 @@ export async function createScheduleChangeRequest(
         }),
         db.scheduleSwapRequest.findFirst({
           where: {
-            workDate,
+            workDate: {
+              gte: startDate,
+              lte: endDate,
+            },
             status: {
               in: [
                 ScheduleSwapRequestStatus.PENDING_COWORKER,
@@ -160,14 +194,16 @@ export async function createScheduleChangeRequest(
     const created = await db.scheduleChangeRequest.create({
       data: {
         employeeId: employee.employeeId,
-        workDate,
-        currentShiftIdSnapshot: previewResult.currentSnapshot.shiftId,
-        currentShiftCodeSnapshot: previewResult.currentSnapshot.shiftCode,
-        currentShiftNameSnapshot: previewResult.currentSnapshot.shiftName,
-        currentStartMinutesSnapshot: previewResult.currentSnapshot.startMinutes,
-        currentEndMinutesSnapshot: previewResult.currentSnapshot.endMinutes,
+        workDate: startDate,
+        startDate,
+        endDate,
+        currentShiftIdSnapshot: firstExpected.shift?.id ?? null,
+        currentShiftCodeSnapshot: firstExpected.shift?.code ?? null,
+        currentShiftNameSnapshot: firstExpected.shift?.name ?? null,
+        currentStartMinutesSnapshot: firstExpected.scheduledStartMinutes,
+        currentEndMinutesSnapshot: firstExpected.scheduledEndMinutes,
         currentSpansMidnightSnapshot:
-          previewResult.currentSnapshot.spansMidnight,
+          firstExpected.shift?.spansMidnight ?? false,
         requestedShiftId: previewResult.requestedShift.id,
         requestedShiftCodeSnapshot: previewResult.requestedShift.code,
         requestedShiftNameSnapshot: previewResult.requestedShift.name,

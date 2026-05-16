@@ -1,19 +1,37 @@
 import { DateRange } from "react-day-picker";
 import { TZ } from "@/lib/timezone";
+import {
+  computeCoverageSummary,
+  getShiftBucket,
+  normalizeWeekStart,
+  toPlannerDateKey,
+  WEEK_PLANNER_DAYS,
+  WEEKDAY_LABELS,
+  type CoverageSummary,
+  type PlannerShiftLike,
+  type ShiftBucket,
+  type WeekPlannerDayKey,
+  type WeekShiftMap,
+} from "@/lib/week-planner";
+
+export type { CoverageSummary, ShiftBucket, WeekPlannerDayKey, WeekShiftMap };
 
 export type EmployeeLite = {
   employeeId: string;
   employeeCode: string;
   firstName: string;
   lastName: string;
-  department?: { name: string | null } | null;
-  position?: { name: string | null } | null;
+  img?: string | null;
+  department?: { departmentId?: string | null; name: string | null } | null;
+  position?: { positionId?: string | null; name: string | null } | null;
 };
 
 export type ShiftLite = {
   id: number;
   code: string;
   name: string;
+  colorHex?: string | null;
+  isDayOff?: boolean;
   startMinutes: number;
   endMinutes: number;
   spansMidnight?: boolean;
@@ -24,30 +42,10 @@ export type ShiftLite = {
   notes?: string | null;
 };
 
-export type Pattern = {
-  id: string;
-  code: string;
-  name: string;
-  sunShiftId: number | null;
-  monShiftId: number | null;
-  tueShiftId: number | null;
-  wedShiftId: number | null;
-  thuShiftId: number | null;
-  friShiftId: number | null;
-  satShiftId: number | null;
-  sunShift?: ShiftLite | null;
-  monShift?: ShiftLite | null;
-  tueShift?: ShiftLite | null;
-  wedShift?: ShiftLite | null;
-  thuShift?: ShiftLite | null;
-  friShift?: ShiftLite | null;
-  satShift?: ShiftLite | null;
-};
-
 export type ScheduleEntry = {
   employee: EmployeeLite;
   shift: ShiftLite | null;
-  source: "override" | "pattern" | "none";
+  source: "override" | "weekly_schedule" | "none";
   scheduledStartMinutes: number | null;
   scheduledEndMinutes: number | null;
 };
@@ -61,27 +59,110 @@ export type OverrideRow = {
   shift: ShiftLite | null;
 };
 
-export type PatternAssignment = {
-  id: string;
-  employeeId: string;
-  effectiveDate: string;
-  reason?: string | null;
-  sunShiftIdSnapshot?: number | null;
-  monShiftIdSnapshot?: number | null;
-  tueShiftIdSnapshot?: number | null;
-  wedShiftIdSnapshot?: number | null;
-  thuShiftIdSnapshot?: number | null;
-  friShiftIdSnapshot?: number | null;
-  satShiftIdSnapshot?: number | null;
-  employee: EmployeeLite;
-  pattern: Pattern | null;
-  isLatest?: boolean;
+export type WeekPlannerLeaveInfo = {
+  leaveType:
+    | "VACATION"
+    | "SICK"
+    | "SIL"
+    | "PERSONAL"
+    | "EMERGENCY"
+    | "UNPAID";
+  isPaidLeave: boolean;
 };
+
+export type WeekPlannerDayDraft = {
+  workDate: string;
+  compareWorkDate: string;
+  shiftId: number | null;
+  shift: ShiftLite | null;
+  compareShiftId: number | null;
+  compareShift: ShiftLite | null;
+  leave: WeekPlannerLeaveInfo | null;
+};
+
+export type WeekPlannerRow = {
+  employee: EmployeeLite;
+  days: Record<WeekPlannerDayKey, WeekPlannerDayDraft>;
+};
+
+export type PlannerDepartmentOption = {
+  departmentId: string;
+  name: string;
+};
+
+export type WeekPlannerAlternatePair = {
+  leftShiftId: number;
+  rightShiftId: number;
+};
+
+export type WeekPlannerDayOffToolInput = {
+  mode: "assignOff" | "clearOff" | "clearAllOff";
+  dayKeys: WeekPlannerDayKey[];
+  employeeIdsByDay: Partial<Record<WeekPlannerDayKey, string[]>>;
+  replaceExistingOff: boolean;
+};
+
+export type WeekPlannerQuickSelectOption = {
+  weekStart: string;
+  isAssigned: boolean;
+  unassignedCount: number;
+};
+
+export type WeekPlannerSnapshot = {
+  weekStart: string;
+  compareWeekStart: string;
+  rows: WeekPlannerRow[];
+  shifts: ShiftLite[];
+  departments: PlannerDepartmentOption[];
+  coverage: CoverageSummary;
+  scheduleWeekOptions: WeekPlannerQuickSelectOption[];
+  referenceWeekOptions: WeekPlannerQuickSelectOption[];
+};
+
+export type WeekPlannerBulkReplaceInput = {
+  mode: "replace";
+  dayKeys: WeekPlannerDayKey[];
+  employeeIds: string[] | null;
+  positionNames: string[] | null;
+  sourceMode: "any" | "dayOff" | "unassigned" | "shift";
+  sourceShiftId: number | null;
+  targetShiftId: number | null;
+};
+
+export type WeekPlannerBulkHeadcountInput = {
+  mode: "headcount";
+  dayKeys: WeekPlannerDayKey[];
+  employeeIds: string[] | null;
+  positionNames: string[] | null;
+  targetMode: "bucket" | "shift";
+  targetBucket: ShiftBucket | null;
+  targetShiftId: number | null;
+  assignShiftId: number | null;
+  targetCount: number;
+};
+
+export type WeekPlannerBulkPositionAllocateInput = {
+  mode: "positionAllocate";
+  dayKeys: WeekPlannerDayKey[];
+  employeeIds: string[] | null;
+  allocations: Array<{
+    positionName: string;
+    shiftId: number | null;
+    targetCount: number;
+  }>;
+};
+
+export type WeekPlannerBulkActionInput =
+  | WeekPlannerBulkReplaceInput
+  | WeekPlannerBulkHeadcountInput
+  | WeekPlannerBulkPositionAllocateInput;
 
 type ShiftInput = {
   id: number;
   code: string;
   name: string;
+  colorHex?: string | null;
+  isDayOff?: boolean | null;
   startMinutes: number;
   endMinutes: number;
   spansMidnight?: boolean | null;
@@ -92,26 +173,6 @@ type ShiftInput = {
   notes?: string | null;
 };
 
-type PatternInput = {
-  id: string;
-  code: string;
-  name: string;
-  sunShiftId?: number | null;
-  monShiftId?: number | null;
-  tueShiftId?: number | null;
-  wedShiftId?: number | null;
-  thuShiftId?: number | null;
-  friShiftId?: number | null;
-  satShiftId?: number | null;
-  sunShift?: ShiftInput | null;
-  monShift?: ShiftInput | null;
-  tueShift?: ShiftInput | null;
-  wedShift?: ShiftInput | null;
-  thuShift?: ShiftInput | null;
-  friShift?: ShiftInput | null;
-  satShift?: ShiftInput | null;
-};
-
 type OverrideInput = {
   id: string;
   workDate: string;
@@ -119,6 +180,32 @@ type OverrideInput = {
   note?: string | null;
   employee: EmployeeLite;
   shift?: ShiftInput | null;
+};
+
+type WeekPlannerDayDraftInput = {
+  workDate: string;
+  compareWorkDate: string;
+  shiftId?: number | null;
+  shift?: ShiftInput | null;
+  compareShiftId?: number | null;
+  compareShift?: ShiftInput | null;
+  leave?: WeekPlannerLeaveInfo | null;
+};
+
+type WeekPlannerRowInput = {
+  employee: EmployeeLite;
+  days: Partial<Record<WeekPlannerDayKey, WeekPlannerDayDraftInput>>;
+};
+
+type WeekPlannerSnapshotInput = {
+  weekStart: string;
+  compareWeekStart: string;
+  rows: WeekPlannerRowInput[];
+  shifts: ShiftInput[];
+  departments: PlannerDepartmentOption[];
+  coverage: CoverageSummary;
+  scheduleWeekOptions?: WeekPlannerQuickSelectOption[];
+  referenceWeekOptions?: WeekPlannerQuickSelectOption[];
 };
 
 export const todayISO = () =>
@@ -154,6 +241,8 @@ export const normalizeShift = (s: ShiftInput): ShiftLite => ({
   id: s.id,
   code: s.code,
   name: s.name,
+  colorHex: s.colorHex ?? null,
+  isDayOff: Boolean(s.isDayOff),
   startMinutes: s.startMinutes,
   endMinutes: s.endMinutes,
   spansMidnight: Boolean(s.spansMidnight),
@@ -171,26 +260,6 @@ export const normalizeShift = (s: ShiftInput): ShiftLite => ({
   notes: s.notes ?? "",
 });
 
-export const normalizePattern = (p: PatternInput): Pattern => ({
-  id: p.id,
-  code: p.code,
-  name: p.name,
-  sunShiftId: p.sunShiftId ?? null,
-  monShiftId: p.monShiftId ?? null,
-  tueShiftId: p.tueShiftId ?? null,
-  wedShiftId: p.wedShiftId ?? null,
-  thuShiftId: p.thuShiftId ?? null,
-  friShiftId: p.friShiftId ?? null,
-  satShiftId: p.satShiftId ?? null,
-  sunShift: p.sunShift ? normalizeShift(p.sunShift) : null,
-  monShift: p.monShift ? normalizeShift(p.monShift) : null,
-  tueShift: p.tueShift ? normalizeShift(p.tueShift) : null,
-  wedShift: p.wedShift ? normalizeShift(p.wedShift) : null,
-  thuShift: p.thuShift ? normalizeShift(p.thuShift) : null,
-  friShift: p.friShift ? normalizeShift(p.friShift) : null,
-  satShift: p.satShift ? normalizeShift(p.satShift) : null,
-});
-
 export const normalizeOverride = (o: OverrideInput): OverrideRow => ({
   id: o.id,
   workDate: o.workDate,
@@ -198,6 +267,43 @@ export const normalizeOverride = (o: OverrideInput): OverrideRow => ({
   note: o.note ?? "",
   employee: o.employee,
   shift: o.shift ? normalizeShift(o.shift) : null,
+});
+
+export const normalizeWeekPlannerRow = (row: WeekPlannerRowInput): WeekPlannerRow => ({
+  employee: row.employee,
+  days: WEEK_PLANNER_DAYS.reduce(
+    (acc, dayKey) => {
+      const day = row.days[dayKey];
+      acc[dayKey] = {
+        workDate: day?.workDate ?? "",
+        compareWorkDate: day?.compareWorkDate ?? "",
+        shiftId:
+          typeof day?.shiftId === "number" ? day.shiftId : day?.shift?.id ?? null,
+        shift: day?.shift ? normalizeShift(day.shift) : null,
+        compareShiftId:
+          typeof day?.compareShiftId === "number"
+            ? day.compareShiftId
+            : day?.compareShift?.id ?? null,
+        compareShift: day?.compareShift ? normalizeShift(day.compareShift) : null,
+        leave: day?.leave ?? null,
+      };
+      return acc;
+    },
+    {} as Record<WeekPlannerDayKey, WeekPlannerDayDraft>,
+  ),
+});
+
+export const normalizeWeekPlannerSnapshot = (
+  snapshot: WeekPlannerSnapshotInput,
+): WeekPlannerSnapshot => ({
+  weekStart: snapshot.weekStart,
+  compareWeekStart: snapshot.compareWeekStart,
+  rows: snapshot.rows.map(normalizeWeekPlannerRow),
+  shifts: snapshot.shifts.map(normalizeShift),
+  departments: snapshot.departments,
+  coverage: snapshot.coverage,
+  scheduleWeekOptions: snapshot.scheduleWeekOptions ?? [],
+  referenceWeekOptions: snapshot.referenceWeekOptions ?? [],
 });
 
 export const toDateInputValue = (value: string) =>
@@ -224,18 +330,148 @@ export const makeDate = (val?: string | null) => {
   return Number.isNaN(d.getTime()) ? undefined : d;
 };
 
-export const patternLabel = (p: Pattern) => {
-  const shiftKeys = [
-    "sunShift",
-    "monShift",
-    "tueShift",
-    "wedShift",
-    "thuShift",
-    "friShift",
-    "satShift",
-  ] as const;
-  const first = shiftKeys
-    .map((key) => p[key])
-    .find((shift): shift is ShiftLite => shift != null);
-  return `${p.name}${first ? ` • ${first.name}` : ""}`;
-};
+export const weekPlannerDayKeys = WEEK_PLANNER_DAYS;
+
+export const weekPlannerDayLabel = (dayKey: WeekPlannerDayKey) =>
+  WEEKDAY_LABELS[dayKey];
+
+export const plannerDateInputValue = (value?: string | Date | null) =>
+  toPlannerDateKey(normalizeWeekStart(value));
+
+export const weekPlannerRowToShiftMap = (row: WeekPlannerRow): WeekShiftMap =>
+  WEEK_PLANNER_DAYS.reduce(
+    (acc, dayKey) => {
+      acc[dayKey] = row.days[dayKey].shiftId ?? null;
+      return acc;
+    },
+    {} as WeekShiftMap,
+  );
+
+export const applyWeekPlannerShiftMap = (
+  row: WeekPlannerRow,
+  shiftMap: WeekShiftMap,
+): WeekPlannerRow => ({
+  ...row,
+  days: WEEK_PLANNER_DAYS.reduce(
+    (acc, dayKey) => {
+      const previousDay = row.days[dayKey];
+      acc[dayKey] = {
+        ...previousDay,
+        shiftId: shiftMap[dayKey] ?? null,
+      };
+      return acc;
+    },
+    {} as Record<WeekPlannerDayKey, WeekPlannerDayDraft>,
+  ),
+});
+
+export const hydrateWeekPlannerRowShifts = (
+  row: WeekPlannerRow,
+  shiftsById: Map<number, ShiftLite>,
+): WeekPlannerRow => ({
+  ...row,
+  days: WEEK_PLANNER_DAYS.reduce(
+    (acc, dayKey) => {
+      const day = row.days[dayKey];
+      acc[dayKey] = {
+        ...day,
+        shift: day.shiftId != null ? shiftsById.get(day.shiftId) ?? null : null,
+        compareShift:
+          day.compareShiftId != null
+            ? shiftsById.get(day.compareShiftId) ?? day.compareShift ?? null
+            : null,
+      };
+      return acc;
+    },
+    {} as Record<WeekPlannerDayKey, WeekPlannerDayDraft>,
+  ),
+});
+
+export const copyCompareWeekIntoRow = (row: WeekPlannerRow): WeekPlannerRow =>
+  applyWeekPlannerShiftMap(
+    row,
+    WEEK_PLANNER_DAYS.reduce(
+      (acc, dayKey) => {
+        acc[dayKey] = row.days[dayKey].compareShiftId ?? null;
+        return acc;
+      },
+      {} as WeekShiftMap,
+    ),
+  );
+
+export const swapCompareWeekIntoRow = (
+  row: WeekPlannerRow,
+  pairs: WeekPlannerAlternatePair[],
+) =>
+  applyWeekPlannerShiftMap(
+    row,
+    WEEK_PLANNER_DAYS.reduce(
+      (acc, dayKey) => {
+        const compareShiftId = row.days[dayKey].compareShiftId ?? null;
+        if (compareShiftId == null) {
+          acc[dayKey] = null;
+          return acc;
+        }
+        const matchedPair = pairs.find(
+          (pair) =>
+            pair.leftShiftId === compareShiftId || pair.rightShiftId === compareShiftId,
+        );
+        if (!matchedPair) {
+          acc[dayKey] = compareShiftId;
+          return acc;
+        }
+        acc[dayKey] =
+          matchedPair.leftShiftId === compareShiftId
+            ? matchedPair.rightShiftId
+            : matchedPair.leftShiftId;
+        return acc;
+      },
+      {} as WeekShiftMap,
+    ),
+  );
+
+export const clearWeekPlannerRow = (row: WeekPlannerRow): WeekPlannerRow =>
+  applyWeekPlannerShiftMap(
+    row,
+    WEEK_PLANNER_DAYS.reduce(
+      (acc, dayKey) => {
+        acc[dayKey] = null;
+        return acc;
+      },
+      {} as WeekShiftMap,
+    ),
+  );
+
+export const computeWeekPlannerCoverage = (
+  rows: WeekPlannerRow[],
+  shiftsById: Map<number, ShiftLite>,
+) => computeCoverageSummary(rows, shiftsById as Map<number, PlannerShiftLike>);
+
+export const getPlannerShiftBucket = (shift: ShiftLite | null | undefined) =>
+  getShiftBucket(shift as PlannerShiftLike | null | undefined);
+
+export const shiftColorStyle = (shift: ShiftLite | null | undefined) =>
+  shift?.colorHex
+    ? {
+        borderColor: shift.colorHex,
+        color: shift.colorHex,
+        backgroundColor: `${shift.colorHex}1A`,
+      }
+    : undefined;
+
+export const isWeekPlannerDayEditable = (day: WeekPlannerDayDraft) => !day.leave;
+
+export const isWeekPlannerDayUnassigned = (day: WeekPlannerDayDraft) =>
+  isWeekPlannerDayEditable(day) && day.shiftId == null;
+
+export const countWeekPlannerUnassignedDays = (rows: WeekPlannerRow[]) =>
+  rows.reduce(
+    (count, row) =>
+      count +
+      WEEK_PLANNER_DAYS.reduce(
+        (dayCount, dayKey) =>
+          dayCount + (isWeekPlannerDayUnassigned(row.days[dayKey]) ? 1 : 0),
+        0,
+      ),
+    0,
+  );

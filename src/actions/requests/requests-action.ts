@@ -8,6 +8,13 @@ import {
   listLeaveRequests as listLeaveRequestsImpl,
 } from "./requests-leave-list-action";
 import {
+  listEmployeeLeaveCreditLedger as listEmployeeLeaveCreditLedgerImpl,
+  listLeaveCreditPolicies as listLeaveCreditPoliciesImpl,
+  listLeaveCreditResetRuns as listLeaveCreditResetRunsImpl,
+  runLeaveCreditReset as runLeaveCreditResetImpl,
+  updateLeaveCreditPolicy as updateLeaveCreditPolicyImpl,
+} from "./requests-leave-credit-action";
+import {
   getEmployeeDayOffMonthlySummary as getEmployeeDayOffMonthlySummaryImpl,
   listDayOffRequests as listDayOffRequestsImpl,
 } from "./requests-day-off-list-action";
@@ -68,6 +75,36 @@ export async function getEmployeeDayOffMonthlySummary(
   ...args: Parameters<typeof getEmployeeDayOffMonthlySummaryImpl>
 ) {
   return getEmployeeDayOffMonthlySummaryImpl(...args);
+}
+
+export async function listLeaveCreditPolicies(
+  ...args: Parameters<typeof listLeaveCreditPoliciesImpl>
+) {
+  return listLeaveCreditPoliciesImpl(...args);
+}
+
+export async function updateLeaveCreditPolicy(
+  ...args: Parameters<typeof updateLeaveCreditPolicyImpl>
+) {
+  return updateLeaveCreditPolicyImpl(...args);
+}
+
+export async function runLeaveCreditReset(
+  ...args: Parameters<typeof runLeaveCreditResetImpl>
+) {
+  return runLeaveCreditResetImpl(...args);
+}
+
+export async function listLeaveCreditResetRuns(
+  ...args: Parameters<typeof listLeaveCreditResetRunsImpl>
+) {
+  return listLeaveCreditResetRunsImpl(...args);
+}
+
+export async function listEmployeeLeaveCreditLedger(
+  ...args: Parameters<typeof listEmployeeLeaveCreditLedgerImpl>
+) {
+  return listEmployeeLeaveCreditLedgerImpl(...args);
 }
 
 export async function listDayOffRequests(
@@ -190,8 +227,11 @@ export type {
   DayOffPreview,
   DayOffRequestPayload,
   DayOffRequestRow,
+  EmployeeLeaveCreditLedgerRow,
   EmployeeDayOffMonthlySummary,
   EmployeeLeaveBalanceSummary,
+  LeaveCreditPolicyRow,
+  LeaveCreditResetRunRow,
   LeaveRequestPayload,
   LeaveRequestRow,
   RequestReviewPayload,

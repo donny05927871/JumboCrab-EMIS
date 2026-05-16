@@ -3,6 +3,7 @@
 import { CashAdvanceRequestStatus } from "@prisma/client";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { startOfZonedDay } from "@/lib/timezone";
 import { cashAdvanceRequestSchema } from "@/lib/validations/requests";
 import {
   canCreateEmployeeRequests,
@@ -53,8 +54,9 @@ export async function createCashAdvanceRequest(
       data: {
         employeeId: employee.employeeId,
         amount: roundMoney(parsed.data.amount!),
-        repaymentPerPayroll: roundMoney(parsed.data.repaymentPerPayroll!),
-        preferredStartDate: parsed.data.preferredStartDate!,
+        repaymentPerPayroll: roundMoney(parsed.data.amount!),
+        preferredStartDate:
+          parsed.data.preferredStartDate ?? startOfZonedDay(new Date()),
         reason: parsed.data.reason ?? null,
         status: CashAdvanceRequestStatus.PENDING_MANAGER,
       },

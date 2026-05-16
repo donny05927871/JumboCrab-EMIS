@@ -17,6 +17,10 @@ import {
   syncEmployeeCurrentStatusFromApprovedLeave,
   toZonedDayKey,
 } from "./requests-shared";
+import {
+  consumeEmployeeLeaveCredits,
+  toLeaveCreditType,
+} from "./requests-leave-credit-shared";
 import { notifyEmployeeOfRequestDecision } from "./requests-notifications";
 import type { LeaveRequestRow, RequestReviewPayload } from "./types";
 
@@ -53,6 +57,7 @@ export async function reviewLeaveRequest(
             employeeCode: true,
             firstName: true,
             lastName: true,
+            startDate: true,
             isArchived: true,
           },
         },
@@ -116,20 +121,8 @@ export async function reviewLeaveRequest(
       existing.startDate,
       existing.endDate,
     );
-    const leaveDayKeys = new Set(leaveDays.map((day) => toZonedDayKey(day)));
-    const paidDateKeys = Array.from(
-      new Set((parsed.data.paidDates ?? []).map((day) => toZonedDayKey(day))),
-    );
-    const invalidPaidDateKey = paidDateKeys.find(
-      (dayKey) => !leaveDayKeys.has(dayKey),
-    );
-    if (invalidPaidDateKey) {
-      return {
-        success: false,
-        error:
-          "Paid leave dates must stay inside the requested leave date range.",
-      };
-    }
+    const leaveCreditType = toLeaveCreditType(existing.leaveType);
+    const isPaidLeaveRequest = Boolean(leaveCreditType);
     const firstDay = leaveDays[0];
     const lastExclusive = new Date(
       leaveDays[leaveDays.length - 1].getTime() + DAY_MS,
@@ -202,9 +195,9 @@ export async function reviewLeaveRequest(
     );
 
     const unscheduledPaidDay = expectedShifts.find(
-      ({ dayKey, expected }) =>
-        paidDateKeys.includes(dayKey) &&
-        !expected.shift &&
+      ({ expected }) =>
+        isPaidLeaveRequest &&
+        (!expected.shift || expected.shift.isDayOff) &&
         expected.scheduledStartMinutes == null &&
         expected.scheduledEndMinutes == null,
     );
@@ -218,8 +211,7 @@ export async function reviewLeaveRequest(
     }
 
     const reviewed = await db.$transaction(async (tx) => {
-      for (const { day, dayKey, expected } of expectedShifts) {
-        const isPaidLeave = paidDateKeys.includes(dayKey);
+      for (const { day, expected } of expectedShifts) {
         await tx.attendance.upsert({
           where: {
             employeeId_workDate: {
@@ -229,7 +221,7 @@ export async function reviewLeaveRequest(
           },
           update: {
             status: ATTENDANCE_STATUS.LEAVE,
-            isPaidLeave,
+            isPaidLeave: isPaidLeaveRequest,
             leaveRequestId: existing.id,
             expectedShiftId: expected.shift?.id ?? null,
             scheduledStartMinutes: expected.scheduledStartMinutes,
@@ -252,7 +244,7 @@ export async function reviewLeaveRequest(
             employeeId: existing.employeeId,
             workDate: day,
             status: ATTENDANCE_STATUS.LEAVE,
-            isPaidLeave,
+            isPaidLeave: isPaidLeaveRequest,
             leaveRequestId: existing.id,
             expectedShiftId: expected.shift?.id ?? null,
             scheduledStartMinutes: expected.scheduledStartMinutes,
@@ -275,6 +267,19 @@ export async function reviewLeaveRequest(
         });
       }
 
+      if (leaveCreditType) {
+        await consumeEmployeeLeaveCredits({
+          client: tx,
+          employeeId: existing.employeeId,
+          employeeStartDate: existing.employee.startDate,
+          leaveType: leaveCreditType,
+          days: leaveDays.length,
+          effectiveDate: reviewedAt,
+          leaveRequestId: existing.id,
+          createdByUserId: session.userId ?? null,
+        });
+      }
+
       const reviewedRequest = await tx.leaveRequest.update({
         where: { id: parsed.data.id },
         data: {
@@ -289,7 +294,6 @@ export async function reviewLeaveRequest(
           attendances: {
             select: {
               workDate: true,
-              isPaidLeave: true,
             },
           },
         },

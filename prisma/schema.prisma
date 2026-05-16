@@ -146,7 +146,7 @@ model Employee {
   positionHistory              EmployeePositionHistory[]
 
   // Scheduling links
-  patternAssignments           EmployeePatternAssignment[]
+  weeklySchedules              WeeklySchedule[]
   shiftOverrides               EmployeeShiftOverride[]
   attendances                  Attendance[]
   punches                      Punch[]
@@ -160,6 +160,7 @@ model Employee {
   deductionAssignments         EmployeeDeductionAssignment[]
   cashAdvanceRequests          CashAdvanceRequest[]
   leaveRequests                LeaveRequest[]
+  leaveCreditLedgerEntries     EmployeeLeaveCreditLedger[]
   dayOffRequests               DayOffRequest[]
   scheduleChangeRequests       ScheduleChangeRequest[]
   scheduleSwapRequestsMade     ScheduleSwapRequest[]         @relation("ScheduleSwapRequestRequester")
@@ -300,6 +301,8 @@ model Shift {
   id                 Int      @id @default(autoincrement())
   code               String   @unique
   name               String
+  colorHex           String?
+  isDayOff           Boolean  @default(false)
   startMinutes       Int // minutes since midnight (e.g., 9:00 AM -> 540)
   endMinutes         Int // minutes since midnight (e.g., 6:00 PM -> 1080)
   spansMidnight      Boolean  @default(false) // true when end wraps past midnight
@@ -312,14 +315,14 @@ model Shift {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
-  // Relations to weekly patterns per day
-  weeklyPatternsSun WeeklyPattern[] @relation("wp_sun")
-  weeklyPatternsMon WeeklyPattern[] @relation("wp_mon")
-  weeklyPatternsTue WeeklyPattern[] @relation("wp_tue")
-  weeklyPatternsWed WeeklyPattern[] @relation("wp_wed")
-  weeklyPatternsThu WeeklyPattern[] @relation("wp_thu")
-  weeklyPatternsFri WeeklyPattern[] @relation("wp_fri")
-  weeklyPatternsSat WeeklyPattern[] @relation("wp_sat")
+  // Relations to weekly schedules per day
+  weeklySchedulesSun WeeklySchedule[] @relation("ws_sun")
+  weeklySchedulesMon WeeklySchedule[] @relation("ws_mon")
+  weeklySchedulesTue WeeklySchedule[] @relation("ws_tue")
+  weeklySchedulesWed WeeklySchedule[] @relation("ws_wed")
+  weeklySchedulesThu WeeklySchedule[] @relation("ws_thu")
+  weeklySchedulesFri WeeklySchedule[] @relation("ws_fri")
+  weeklySchedulesSat WeeklySchedule[] @relation("ws_sat")
 
   // Usage
   overrides              EmployeeShiftOverride[]
@@ -329,58 +332,32 @@ model Shift {
   @@index([name])
 }
 
-/// Weekly pattern that selects one shift per weekday; null means rest day.
-model WeeklyPattern {
-  id       String  @id @default(cuid())
-  code     String  @unique
-  name     String
-  isActive Boolean @default(true)
-
-  sunShiftId Int?
+/// One weekly schedule row per employee and week start (Monday anchor).
+model WeeklySchedule {
+  id         String   @id @default(cuid())
+  employeeId String
+  weekStart  DateTime
   monShiftId Int?
   tueShiftId Int?
   wedShiftId Int?
   thuShiftId Int?
   friShiftId Int?
   satShiftId Int?
+  sunShiftId Int?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
-  sunShift Shift? @relation("wp_sun", fields: [sunShiftId], references: [id])
-  monShift Shift? @relation("wp_mon", fields: [monShiftId], references: [id])
-  tueShift Shift? @relation("wp_tue", fields: [tueShiftId], references: [id])
-  wedShift Shift? @relation("wp_wed", fields: [wedShiftId], references: [id])
-  thuShift Shift? @relation("wp_thu", fields: [thuShiftId], references: [id])
-  friShift Shift? @relation("wp_fri", fields: [friShiftId], references: [id])
-  satShift Shift? @relation("wp_sat", fields: [satShiftId], references: [id])
+  employee Employee @relation(fields: [employeeId], references: [employeeId], onDelete: Cascade)
+  monShift Shift?   @relation("ws_mon", fields: [monShiftId], references: [id])
+  tueShift Shift?   @relation("ws_tue", fields: [tueShiftId], references: [id])
+  wedShift Shift?   @relation("ws_wed", fields: [wedShiftId], references: [id])
+  thuShift Shift?   @relation("ws_thu", fields: [thuShiftId], references: [id])
+  friShift Shift?   @relation("ws_fri", fields: [friShiftId], references: [id])
+  satShift Shift?   @relation("ws_sat", fields: [satShiftId], references: [id])
+  sunShift Shift?   @relation("ws_sun", fields: [sunShiftId], references: [id])
 
-  assignments EmployeePatternAssignment[]
-  createdAt   DateTime                    @default(now())
-  updatedAt   DateTime                    @updatedAt
-
-  @@index([name])
-}
-
-/// Assigns a weekly pattern to an employee starting on a date.
-model EmployeePatternAssignment {
-  id                 String   @id @default(cuid())
-  employeeId         String
-  effectiveDate      DateTime // changeover date; latest <= target date applies
-  patternId          String
-  // Immutable snapshot of weekday shift IDs at assignment time.
-  sunShiftIdSnapshot Int?
-  monShiftIdSnapshot Int?
-  tueShiftIdSnapshot Int?
-  wedShiftIdSnapshot Int?
-  thuShiftIdSnapshot Int?
-  friShiftIdSnapshot Int?
-  satShiftIdSnapshot Int?
-  reason             String?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
-
-  employee Employee      @relation(fields: [employeeId], references: [employeeId], onDelete: Cascade)
-  pattern  WeeklyPattern @relation(fields: [patternId], references: [id])
-
-  @@index([employeeId, effectiveDate])
+  @@unique([employeeId, weekStart])
+  @@index([weekStart])
 }
 
 /// One-day exception that replaces the pattern-based shift.
@@ -746,6 +723,10 @@ model CashAdvanceRequest {
   amount                Decimal                  @db.Decimal(12, 2)
   repaymentPerPayroll   Decimal                  @db.Decimal(12, 2)
   preferredStartDate    DateTime
+  approvedAmount        Decimal?                 @db.Decimal(12, 2)
+  approvedDeductionMode CashAdvanceDeductionMode?
+  approvedRepaymentPerPayroll Decimal?           @db.Decimal(12, 2)
+  approvedEffectiveFrom DateTime?
   reason                String?
   status                CashAdvanceRequestStatus @default(PENDING_MANAGER)
   managerRemarks        String?
@@ -789,10 +770,78 @@ model LeaveRequest {
   @@index([reviewedByUserId, reviewedAt])
 }
 
+model LeaveCreditPolicy {
+  id            String          @id @default(cuid())
+  leaveType     LeaveCreditType @unique
+  resetMonth    Int             @default(1)
+  resetDay      Int             @default(1)
+  annualCredits Int             @default(5)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  resetRuns LeaveCreditResetRun[]
+
+  @@index([resetMonth, resetDay])
+}
+
+model LeaveCreditResetRun {
+  id             String                  @id @default(cuid())
+  policyId       String
+  leaveType      LeaveCreditType
+  cycleStartDate DateTime
+  cycleEndDate   DateTime
+  effectiveDate  DateTime
+  annualCredits  Int
+  employeeCount  Int                     @default(0)
+  runType        LeaveCreditResetRunType @default(MANUAL)
+  notes          String?
+  initiatedByUserId String?
+  createdAt      DateTime                @default(now())
+
+  policy        LeaveCreditPolicy          @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  ledgerEntries EmployeeLeaveCreditLedger[]
+
+  @@index([leaveType, effectiveDate])
+  @@index([policyId, cycleStartDate])
+}
+
+model EmployeeLeaveCreditLedger {
+  id                String                     @id @default(cuid())
+  employeeId        String
+  leaveType         LeaveCreditType
+  entryType         LeaveCreditLedgerEntryType
+  amount            Int
+  balanceBefore     Int
+  balanceAfter      Int
+  effectiveDate     DateTime
+  cycleStartDate    DateTime
+  leaveRequestId    String?
+  resetRunId        String?
+  notes             String?
+  createdByUserId   String?
+  createdAt         DateTime                   @default(now())
+
+  employee      Employee            @relation(fields: [employeeId], references: [employeeId], onDelete: Cascade)
+  resetRun      LeaveCreditResetRun? @relation(fields: [resetRunId], references: [id], onDelete: SetNull)
+
+  @@index([employeeId, leaveType, cycleStartDate, createdAt])
+  @@index([leaveRequestId])
+  @@index([resetRunId])
+  @@index([leaveType, effectiveDate])
+}
+
 model DayOffRequest {
   id                           String              @id @default(cuid())
   employeeId                   String
   workDate                     DateTime
+  sourceOffDate                DateTime?
+  targetWorkDate               DateTime?
+  sourceShiftIdSnapshot        Int?
+  sourceShiftCodeSnapshot      String?
+  sourceShiftNameSnapshot      String?
+  sourceStartMinutesSnapshot   Int?
+  sourceEndMinutesSnapshot     Int?
+  sourceSpansMidnightSnapshot  Boolean             @default(false)
   currentShiftIdSnapshot       Int?
   currentShiftCodeSnapshot     String?
   currentShiftNameSnapshot     String?
@@ -821,6 +870,8 @@ model ScheduleChangeRequest {
   id                             String                      @id @default(cuid())
   employeeId                     String
   workDate                       DateTime
+  startDate                      DateTime?
+  endDate                        DateTime?
   currentShiftIdSnapshot         Int?
   currentShiftCodeSnapshot       String?
   currentShiftNameSnapshot       String?
@@ -1190,9 +1241,32 @@ enum CashAdvanceRequestStatus {
 enum LeaveRequestType {
   VACATION
   SICK
+  SIL
   PERSONAL
   EMERGENCY
   UNPAID
+}
+
+enum LeaveCreditType {
+  SICK
+  SIL
+}
+
+enum LeaveCreditLedgerEntryType {
+  GRANT
+  RESET
+  USAGE
+  ADJUSTMENT
+}
+
+enum LeaveCreditResetRunType {
+  MANUAL
+  SCHEDULED
+}
+
+enum CashAdvanceDeductionMode {
+  FULL_NEXT_PAYROLL
+  INSTALLMENTS
 }
 
 enum LeaveRequestStatus {
